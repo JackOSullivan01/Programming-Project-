@@ -38,9 +38,13 @@ def resample_returns(df: pd.DataFrame, frequency: str) -> pd.DataFrame:
     # Compound daily returns accurately across each period
     compounded = (1.0 + df).resample(rule).prod() - 1.0
     return compounded.dropna(how="all")
+
+
 # ==============================================================================
 # 2. STATISTICAL CORRELATION & P-VALUE MATRIX COMPUTATION
 # ==============================================================================
+
+
 def compute_correlation_and_pvalues(
     df: pd.DataFrame, method: str = "pearson"
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -67,3 +71,181 @@ def compute_correlation_and_pvalues(
             pval_matrix.iloc[i, j] = pval_matrix.iloc[j, i] = p
 
     return corr_matrix, pval_matrix
+
+
+# ==============================================================================
+# 3. INTERACTIVE PLOTLY HEATMAP & INSIGHT GENERATOR
+# ==============================================================================
+
+
+RAW_DF = load_and_prepare_data("industry_returns_clean.csv")
+ALL_SECTORS = list(RAW_DF.columns)
+MIN_YEAR = int(RAW_DF.index.year.min())
+MAX_YEAR = int(RAW_DF.index.year.max())
+
+
+def update_correlation_panel(
+    selected_sectors: list[str],
+    start_year: int,
+    end_year: int,
+    frequency: str,
+    corr_method: str,
+    abs_threshold: float,
+    show_values: bool,
+    hide_insignificant: bool,
+    triangle_mode: str,
+):
+    """
+    Callback triggered whenever any UI control in the Industry Correlations
+    panel changes. Returns an interactive Plotly Figure and an analytical summary.
+    """
+    # Guard against fewer than 2 sectors or inverted year bounds
+    if not selected_sectors or len(selected_sectors) < 2:
+        empty_fig = go.Figure()
+        empty_fig.add_annotation(
+            text="Select at least 2 industries to compute correlations.",
+            xref="paper",
+            yref="paper",
+            x=0.5,
+            y=0.5,
+            showarrow=False,
+            font=dict(size=14, color="#64748b"),
+        )
+        empty_fig.update_layout(
+            xaxis=dict(visible=False),
+            yaxis=dict(visible=False),
+            plot_bgcolor="white",
+            height=460,
+        )
+        return empty_fig, "**Selection Notice:** Please choose at least two sectors."
+
+    if start_year > end_year:
+        start_year, end_year = end_year, start_year
+
+    # Filter date window and selected industries
+    filtered = RAW_DF.loc[f"{start_year}-01-01":f"{end_year}-12-31", selected_sectors]
+    resampled = resample_returns(filtered, frequency)
+
+    # Calculate correlations & significance
+    corr_df, pval_df = compute_correlation_and_pvalues(resampled, method=corr_method)
+
+    # Build display matrix & custom hover metadata
+    z_vals = corr_df.values.copy()
+    text_labels = np.empty(z_vals.shape, dtype=object)
+    hover_text = np.empty(z_vals.shape, dtype=object)
+
+    n = len(selected_sectors)
+    for i in range(n):
+        for j in range(n):
+            r_val = corr_df.iloc[i, j]
+            p_val = pval_df.iloc[i, j]
+            sec_y = selected_sectors[i]
+            sec_x = selected_sectors[j]
+
+            # Apply structural triangle mask if selected
+            is_masked = False
+            if triangle_mode == "Upper Triangle Only" and i > j:
+                is_masked = True
+            elif triangle_mode == "Lower Triangle Only" and i < j:
+                is_masked = True
+
+            # Apply threshold and p-value filters (off-diagonal pairs)
+            if i != j:
+                if abs(r_val) < abs_threshold:
+                    is_masked = True
+                if hide_insignificant and p_val >= 0.05:
+                    is_masked = True
+
+            if is_masked or np.isnan(r_val):
+                z_vals[i, j] = np.nan
+                text_labels[i, j] = ""
+                hover_text[i, j] = ""
+            else:
+                text_labels[i, j] = f"{r_val:.2f}" if show_values else ""
+                sig_tag = "Significant (p < 0.05)" if p_val < 0.05 else "Not significant"
+                hover_text[i, j] = (
+                    f"<b>{sec_y} vs. {sec_x}</b><br>"
+                    f"Correlation ({corr_method}): <b>{r_val:.3f}</b><br>"
+                    f"p-value: {p_val:.4f} ({sig_tag})<br>"
+                    f"Period: {start_year}–{end_year} ({frequency})"
+                )
+
+    # Build diverging RdBu heatmap matching the Industry Performance Explorer palette
+    fig = go.Figure(
+        data=go.Heatmap(
+            z=z_vals,
+            x=selected_sectors,
+            y=selected_sectors,
+            zmin=-1.0,
+            zmax=1.0,
+            zmid=0.0,
+            colorscale="RdBu_r",  # Red = strong positive (+1), Blue = negative (-1)
+            text=text_labels,
+            texttemplate="%{text}" if show_values else None,
+            textfont=dict(size=11, family="Inter, Arial, sans-serif"),
+            hovertext=hover_text,
+            hoverinfo="text",
+            xgap=2,
+            ygap=2,
+            colorbar=dict(
+                title=dict(text="Correlation", side="right"),
+                tickvals=[-1.0, -0.5, 0.0, 0.5, 1.0],
+                tickformat=".2f",
+                thickness=14,
+                len=0.85,
+            ),
+        )
+    )
+
+    fig.update_layout(
+        title=dict(
+            text=(
+                f"<b>Industry Correlations ({frequency} Returns, {start_year}–{end_year})</b>"
+                f"<br><span style='font-size:12px;color:#64748b;'>"
+                f"{corr_method} r | Threshold |r| ≥ {abs_threshold:.2f} | N = {len(resampled):,} observations"
+                f"</span>"
+            ),
+            x=0.02,
+            y=0.96,
+        ),
+        xaxis=dict(
+            side="top",
+            tickangle=-25,
+            showgrid=False,
+            zeroline=False,
+        ),
+        yaxis=dict(
+            autorange="reversed",  # Keeps diagonal running top-left to bottom-right
+            showgrid=False,
+            zeroline=False,
+        ),
+        plot_bgcolor="#f8fafc",
+        paper_bgcolor="white",
+        margin=dict(l=90, r=40, t=115, b=30),
+        height=490,
+    )
+
+    # Extract strongest and weakest off-diagonal pairs for automated storytelling
+    upper_indices = np.triu_indices(n, k=1)
+    pair_records = []
+    for i, j in zip(*upper_indices):
+        r_val = corr_df.iloc[i, j]
+        if not np.isnan(r_val):
+            pair_records.append((selected_sectors[i], selected_sectors[j], r_val))
+
+    if pair_records:
+        pair_records.sort(key=lambda item: item[2], reverse=True)
+        top_pair = pair_records[0]
+        low_pair = pair_records[-1]
+        avg_corr = np.mean([p[2] for p in pair_records])
+        summary_md = (
+            f"**Diversification & Co-Movement Summary ({start_year}–{end_year}, {frequency}):** "
+            f"Average cross-sector correlation is **{avg_corr:.2f}**. "
+            f"Highest co-movement: **{top_pair[0]} & {top_pair[1]} ({top_pair[2]:.2f})** | "
+            f"Best diversification pair: **{low_pair[0]} & {low_pair[1]} ({low_pair[2]:.2f})**."
+        )
+    else:
+        summary_md = "**Summary:** No visible off-diagonal correlations under current filter settings."
+
+    return fig, summary_md
+
