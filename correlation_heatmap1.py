@@ -339,3 +339,20 @@ def build_correlation_panel() -> gr.Column:
 
     return panel, panel_inputs, panel_outputs
 
+# ==============================================================================
+# 5. STANDALONE EXECUTION ENTRY POINT
+# ==============================================================================
+if __name__ == "__main__":
+    with gr.Blocks(title="Industry Performance Explorer - Correlation Module") as demo:
+        gr.Markdown(
+            "# Industry Performance Explorer\n"
+            "### Growth • Risk • Diversification *(Bottom-Left Panel Preview)*"
+        )
+        _, init_inputs, init_outputs = build_correlation_panel()
+        demo.load(
+            fn=update_correlation_panel,
+            inputs=init_inputs,
+            outputs=init_outputs,
+        )
+
+    demo.launch()
