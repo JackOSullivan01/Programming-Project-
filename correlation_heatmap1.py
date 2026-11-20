@@ -249,3 +249,93 @@ def update_correlation_panel(
 
     return fig, summary_md
 
+# ==============================================================================
+# 4. MODULAR GRADIO PANEL BUILDER (INTEGRATES INTO 4-PANEL DASHBOARD)
+# ==============================================================================
+def build_correlation_panel() -> gr.Column:
+    """
+    Constructs the self-contained bottom-left 'Industry correlations' card
+    so it can be imported directly into the main 2x2 Gradio dashboard layout.
+    """
+    with gr.Column(variant="panel") as panel:
+        gr.Markdown("### 🔗 Industry correlations")
+
+        # Row 1: Multi-select Industries
+        sector_selector = gr.Dropdown(
+            choices=ALL_SECTORS,
+            value=ALL_SECTORS,
+            multiselect=True,
+            label="Industries",
+            info="Add or remove sectors from the correlation matrix",
+        )
+
+        # Row 2: Threshold Slider, Date Window, and Frequency Controls
+        with gr.Row():
+            threshold_slider = gr.Slider(
+                minimum=0.0,
+                maximum=0.95,
+                value=0.0,
+                step=0.05,
+                label="Absolute correlation threshold |r|",
+            )
+            start_year_dd = gr.Dropdown(
+                choices=list(range(MIN_YEAR, MAX_YEAR + 1)),
+                value=MIN_YEAR,
+                label="Start year",
+            )
+            end_year_dd = gr.Dropdown(
+                choices=list(range(MIN_YEAR, MAX_YEAR + 1)),
+                value=MAX_YEAR,
+                label="End year",
+            )
+            freq_dd = gr.Dropdown(
+                choices=["Daily", "Weekly", "Monthly", "Quarterly"],
+                value="Daily",
+                label="Frequency",
+            )
+
+        # Row 3: Display & Statistical Controls
+        with gr.Row():
+            show_vals_chk = gr.Checkbox(value=True, label="Show values")
+            sig_only_chk = gr.Checkbox(value=False, label="Significant only (p < 0.05)")
+            method_radio = gr.Radio(
+                choices=["Pearson", "Spearman"],
+                value="Pearson",
+                label="Method",
+            )
+            triangle_dd = gr.Dropdown(
+                choices=["Full Matrix", "Upper Triangle Only", "Lower Triangle Only"],
+                value="Full Matrix",
+                label="Matrix view",
+            )
+
+        # Main Interactive Chart & Automated Story Callout
+        heatmap_plot = gr.Plot(label="Correlation Matrix")
+        insight_text = gr.Markdown()
+
+        # Wire all UI controls to the update callback
+        controls = [
+            sector_selector,
+            start_year_dd,
+            end_year_dd,
+            freq_dd,
+            method_radio,
+            threshold_slider,
+            show_vals_chk,
+            sig_only_chk,
+            triangle_dd,
+        ]
+
+        for ctrl in controls:
+            ctrl.change(
+                fn=update_correlation_panel,
+                inputs=controls,
+                outputs=[heatmap_plot, insight_text],
+            )
+
+        # Trigger initial render when dashboard loads
+        panel_inputs = controls
+        panel_outputs = [heatmap_plot, insight_text]
+
+    return panel, panel_inputs, panel_outputs
+
