@@ -3,9 +3,7 @@ from pathlib import Path
 
 import gradio as gr
 import pandas as pd
-from adjustText import adjust_text
-from matplotlib.figure import Figure
-from matplotlib.ticker import MaxNLocator, PercentFormatter
+import plotly.graph_objects as go
 
 
 def risk_vs_return_panel(returns):
@@ -51,15 +49,13 @@ def risk_vs_return_panel(returns):
         if not selected:
             return "Choose at least one industry.", None, empty_table
 
-        start_date = pd.to_datetime(
-            start, format="%Y-%m-%d", errors="coerce"
-        )
-        end_date = pd.to_datetime(
-            end, format="%Y-%m-%d", errors="coerce"
-        )
+        start_date = pd.to_datetime(start, errors="coerce")
+        end_date = pd.to_datetime(end, errors="coerce")
         if pd.isna(start_date) or pd.isna(end_date):
-            return "Enter both dates in `YYYY-MM-DD` format.", None, empty_table
+            return "Choose both a start date and an end date.", None, empty_table
 
+        start_date = start_date.normalize()
+        end_date = end_date.normalize()
         if start_date > end_date:
             return "The end date must be on or after the start date.", None, empty_table
 
@@ -75,10 +71,9 @@ def risk_vs_return_panel(returns):
         ):
             return "Enter a volatility target of zero or greater.", None, empty_table
 
-        # Filter to the selected dates and industries.
         period_returns = returns.loc[start_date:end_date, selected]
 
-        # Compound daily returns within each week, month, or year.
+        # Compound daily returns within each selected week, month, or year.
         rule = frequencies[frequency]
         if rule is not None:
             period_returns = (
@@ -88,7 +83,7 @@ def risk_vs_return_panel(returns):
         if risk_measure == "Volatility":
             risk = period_returns.std()
         else:
-            # Only returns below zero contribute to downside deviation.
+            # Returns below zero contribute to downside deviation.
             risk = period_returns.clip(upper=0).pow(2).mean() ** 0.5
 
         summary = pd.DataFrame({
@@ -106,16 +101,24 @@ def risk_vs_return_panel(returns):
             )
 
         messages = []
+        show_target_region = target_return is not None and show_volatility_target
 
-        if target_return is not None and show_volatility_target:
+        if show_target_region:
             meets_both = (
                 (summary[return_column] >= target_return)
                 & (summary[risk_column] <= target_volatility)
             )
-            messages.append(
-                f"**{meets_both.sum()} of {len(summary)} plotted industries "
-                f"meet both targets.**"
+            matching_industries = (
+                summary.loc[meets_both]
+                .sort_values(return_column, ascending=False)
+                .index.tolist()
             )
+            messages.append(
+                f"**{len(matching_industries)} of {len(summary)} plotted "
+                "industries meet both targets.**"
+            )
+            if matching_industries:
+                messages.append(", ".join(matching_industries))
 
         omitted = len(selected) - len(summary)
         if omitted:
@@ -123,91 +126,103 @@ def risk_vs_return_panel(returns):
                 f"Industries omitted due to insufficient data: **{omitted}**."
             )
 
-        background = "#242527"
-        foreground = "#E8EAF0"
-        fig = Figure(
-            figsize=(10, 4.8), facecolor=background, layout="constrained"
-        )
-        ax = fig.subplots()
-        ax.set_facecolor(background)
-        ax.set_axisbelow(True)
-        ax.grid(axis="y", color="#484B53", linewidth=0.7, alpha=0.65)
-
         x = summary[risk_column]
         y = summary[return_column]
-        dots = ax.scatter(
-            x,
-            y,
-            c=[colors[name] for name in summary.index],
-            s=64,
-            edgecolors=background,
-            linewidths=0.8,
-            zorder=3,
-        )
+
+        # Include both the plotted points and any active target lines.
+        x_min, x_max = x.min(), x.max()
+        y_min, y_max = y.min(), y.max()
+
+        if show_volatility_target:
+            x_min = min(x_min, target_volatility)
+            x_max = max(x_max, target_volatility)
 
         if target_return is not None:
-            ax.axhline(
-                target_return,
-                color="#F1B96A",
-                linestyle="--",
-                linewidth=1.2,
-                label=f"Target return {target_return:g}%",
+            y_min = min(y_min, target_return)
+            y_max = max(y_max, target_return)
+
+        x_padding = max((x_max - x_min) * 0.15, 0.01)
+        y_padding = max((y_max - y_min) * 0.15, 0.01)
+        left = max(0, x_min - x_padding)
+        right = x_max + x_padding
+        bottom = y_min - y_padding
+        top = y_max + y_padding
+
+        fig = go.Figure(
+            go.Scatter(
+                x=x.tolist(),
+                y=y.tolist(),
+                mode="markers",
+                text=summary.index.tolist(),
+                marker=dict(
+                    size=11,
+                    color=[colors[name] for name in summary.index],
+                    line=dict(color="#242527", width=1),
+                ),
+                hovertemplate=(
+                    "<b>%{text}</b><br>"
+                    + risk_label + ": %{x:.4f}%<br>"
+                    + return_label + ": %{y:.4f}%"
+                    + "<extra></extra>"
+                ),
+            )
+        )
+
+        if show_target_region:
+            fig.add_shape(
+                type="rect",
+                xref="x",
+                yref="y",
+                x0=0,
+                x1=target_volatility,
+                y0=target_return,
+                y1=top,
+                fillcolor="rgba(209, 213, 219, 0.16)",
+                line_width=0,
+                layer="below",
+            )
+
+        if target_return is not None:
+            fig.add_hline(
+                y=target_return,
+                line_dash="dash",
+                line_color="#F1B96A",
+                annotation_text=f"Target return {target_return:g}%",
+                annotation_position="top right",
             )
 
         if show_volatility_target:
-            ax.axvline(
-                target_volatility,
-                color="#83A9FF",
-                linestyle="--",
-                linewidth=1.2,
-                label=f"Target volatility {target_volatility:g}%",
+            fig.add_vline(
+                x=target_volatility,
+                line_dash="dash",
+                line_color="#83A9FF",
+                annotation_text=f"Target volatility {target_volatility:g}%",
+                annotation_position="top right",
             )
 
-        if ax.lines:
-            ax.legend(
-                loc="lower left",
-                bbox_to_anchor=(0, 1.02),
-                ncol=2,
-                frameon=False,
-                labelcolor=foreground,
-                fontsize=9,
-            )
-
-        ax.set_xlabel(risk_label, color=foreground, labelpad=8)
-        ax.set_ylabel(return_label, color=foreground, labelpad=8)
-        ax.tick_params(axis="both", colors="#C9CDD5", labelsize=9, length=0)
-
-        ax.xaxis.set_major_locator(MaxNLocator(nbins=7))
-        ax.yaxis.set_major_locator(MaxNLocator(nbins=6))
-        ax.xaxis.set_major_formatter(PercentFormatter(xmax=100))
-        ax.yaxis.set_major_formatter(PercentFormatter(xmax=100))
-
-        for edge in ("top", "right", "left"):
-            ax.spines[edge].set_visible(False)
-        ax.spines["bottom"].set_color("#666A73")
-        ax.margins(x=0.23, y=0.17)
-
-        if len(summary) == 1:
-            ax.annotate(
-                summary.index[0],
-                (x.iloc[0], y.iloc[0]),
-                xytext=(9, 6),
-                textcoords="offset points",
-                fontsize=9,
-                color=foreground,
-            )
-        else:
-            labels = [
-                ax.text(risk_pct, return_pct, name, fontsize=9, color=foreground)
-                for name, (risk_pct, return_pct) in summary.iterrows()
-            ]
-            adjust_text(
-                labels,
-                objects=dots,
-                ax=ax,
-                expand=(1.15, 1.30),
-                arrowprops=dict(arrowstyle="-", color="#9FA6B2", lw=0.7),
-            )
+        fig.update_layout(
+            template="plotly_dark",
+            paper_bgcolor="#242527",
+            plot_bgcolor="#242527",
+            hovermode="closest",
+            showlegend=False,
+            margin=dict(l=65, r=45, t=45, b=55),
+            height=480,
+        )
+        fig.update_xaxes(
+            title_text=risk_label,
+            range=[left, right],
+            ticksuffix="%",
+            showgrid=False,
+            zeroline=False,
+        )
+        fig.update_yaxes(
+            title_text=return_label,
+            range=[bottom, top],
+            ticksuffix="%",
+            gridcolor="#45474D",
+            zeroline=False,
+        )
 
         table = (
             summary.sort_values(return_column, ascending=False)
@@ -228,8 +243,18 @@ def risk_vs_return_panel(returns):
         )
 
         with gr.Row():
-            start = gr.Textbox(label="Start date (YYYY-MM-DD)", value=first_date)
-            end = gr.Textbox(label="End date (YYYY-MM-DD)", value=last_date)
+            start = gr.DateTime(
+                label="Start date",
+                value=first_date,
+                include_time=False,
+                type="string",
+            )
+            end = gr.DateTime(
+                label="End date",
+                value=last_date,
+                include_time=False,
+                type="string",
+            )
             frequency = gr.Dropdown(
                 choices=list(frequencies),
                 value=default_frequency,
@@ -243,10 +268,12 @@ def risk_vs_return_panel(returns):
                 label="Risk measure",
             )
             target_return = gr.Number(
-                label="Target return (%)", value=default_return_target
+                label="Target return (%)",
+                value=default_return_target,
             )
             target_volatility = gr.Number(
-                label="Target volatility (%)", value=default_volatility_target
+                label="Target volatility (%)",
+                value=default_volatility_target,
             )
 
         with gr.Row():
@@ -291,4 +318,4 @@ if __name__ == "__main__":
     with gr.Blocks() as app:
         risk_vs_return_panel(returns)
 
-    app.launch(server_name="0.0.0.0", server_port=7861)
+    app.launch(server_name="0.0.0.0")
