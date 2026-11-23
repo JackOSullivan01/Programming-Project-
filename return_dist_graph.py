@@ -1,80 +1,111 @@
 from pathlib import Path
 
-import streamlit as st
+import gradio as gr
 import pandas as pd
 import matplotlib.pyplot as plt
 
 
-st.title("Return distributions")
-
-# Find the cleaned CSV beside this Python file
+# Load the cleaned dataset
 filename = Path(__file__).parent / "industry_returns_clean.csv"
 
-# Load the dataset and use dates as the row index
 df = pd.read_csv(
     filename,
     parse_dates=["Date"],
     index_col="Date"
-)
+).sort_index()
 
-# Arrange from oldest to newest
-df = df.sort_index()
 
-# Let the user choose one sector
-sector = st.selectbox(
-    "Choose a sector",
-    options=list(df.columns)
-)
+# Gradio runs this function whenever an input changes
+def draw_histogram(sector, start_date, end_date):
 
-# Place the date inputs beside each other
-left, right = st.columns(2)
+    # Convert the user's text inputs into dates
+    start = pd.to_datetime(start_date, errors="coerce")
+    end = pd.to_datetime(end_date, errors="coerce")
 
-with left:
-    start_date = st.date_input(
-        "Start date",
-        value=df.index.min().date(),
-        min_value=df.index.min().date(),
-        max_value=df.index.max().date()
+    if pd.isna(start) or pd.isna(end):
+        return None, "Enter dates as YYYY-MM-DD."
+
+    if start > end:
+        return None, "Choose a start date before the end date."
+
+    # Filter the dates and select the chosen sector
+    selected_data = df.loc[start:end]
+
+    # Convert decimal returns to percentages
+    sector_returns = selected_data[sector].dropna() * 100
+
+    if sector_returns.empty:
+        return None, "There are no trading observations in this period."
+
+    # Create the histogram
+    fig, ax = plt.subplots(figsize=(8, 4))
+
+    ax.hist(
+        sector_returns,
+        bins=30,
+        color="#2563EB",
+        edgecolor="white"
     )
 
-with right:
-    end_date = st.date_input(
-        "End date",
-        value=df.index.max().date(),
-        min_value=df.index.min().date(),
-        max_value=df.index.max().date()
+    ax.set_title(f"{sector}: daily returns")
+    ax.set_xlabel("Daily return (%)")
+    ax.set_ylabel("Number of trading days")
+
+    plt.close(fig)
+
+    # Return the graph and clear any previous message
+    return fig, ""
+
+
+# Create the webpage
+with gr.Blocks(title="Return distributions") as demo:
+
+    gr.Markdown("# Return distributions")
+
+    with gr.Row():
+        sector_input = gr.Dropdown(
+            choices=list(df.columns),
+            value=df.columns[0],
+            label="Sector"
+        )
+
+        start_input = gr.Textbox(
+            value=df.index.min().strftime("%Y-%m-%d"),
+            label="Start date · YYYY-MM-DD"
+        )
+
+        end_input = gr.Textbox(
+            value=df.index.max().strftime("%Y-%m-%d"),
+            label="End date · YYYY-MM-DD"
+        )
+
+    graph = gr.Plot(show_label=False)
+    message = gr.Markdown()
+
+    inputs = [sector_input, start_input, end_input]
+    outputs = [graph, message]
+
+    # Draw the initial graph when the page opens
+    demo.load(
+        fn=draw_histogram,
+        inputs=inputs,
+        outputs=outputs,
+        concurrency_id="histogram",
+        concurrency_limit=1
     )
 
-# Stop if the dates are in the wrong order
-if start_date > end_date:
-    st.info("Choose a start date before the end date.")
-    st.stop()
+    # Automatically update when any input changes
+    for control in inputs:
+        control.change(
+            fn=draw_histogram,
+            inputs=inputs,
+            outputs=outputs,
+            trigger_mode="always_last",
+            concurrency_id="histogram",
+            concurrency_limit=1
+        )
 
-#Rows within the chosen dates
-selected_data = df.loc[pd.Timestamp(start_date):pd.Timestamp(end_date)]
 
-#Select the sector, omit missing returns and convert to percentages
-sector_returns = selected_data[sector].dropna() * 100
-
-#No trading on weekends 
-if sector_returns.empty:
-    st.info("There are no trading observations in this period.")
-    st.stop()
-
-# Creating histogram
-fig, ax = plt.subplots(figsize=(8, 4))
-
-ax.hist(
-    sector_returns,
-    bins=30,
-    color="#2563EB",
-    edgecolor="white"
-)
-
-#Label and display graph
-ax.set_title(f"{sector}: daily returns")
-ax.set_xlabel("Daily return (%)")
-ax.set_ylabel("Number of trading days")
-
-st.pyplot(fig)
-plt.close(fig)
+# Start the app
+if __name__ == "__main__":
+    demo.launch(inbrowser=True)
