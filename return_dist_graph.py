@@ -16,7 +16,9 @@ df = pd.read_csv(
 
 
 # Gradio runs this function whenever an input changes
-def draw_histogram(sector, start_date, end_date, bins, frequency):
+def draw_histogram(
+        sector, start_date, end_date, bins, frequency, loss_threshold
+):
 
     # Convert the text inputs into dates
     start = pd.to_datetime(start_date, errors="coerce")
@@ -60,6 +62,17 @@ def draw_histogram(sector, start_date, end_date, bins, frequency):
         color="#2563EB",
         edgecolor="white"
     )
+
+    #Mark the user's chosen loss threshold
+    ax.axvline(
+        loss_threshold,
+        color="#DC2626",
+        linestyle="--",
+        linewidth=1.5,
+        label=f"Loss threshold: {loss_threshold}%"
+    )
+
+    ax.legend(frameon=False)
 
     ax.set_title(f"{sector}: {frequency.lower()} returns")
     ax.set_xlabel(f"{frequency} return (%)")
@@ -107,6 +120,14 @@ with gr.Blocks(title="Return distributions") as demo:
             label="Return frequency"
         )
 
+        loss_input = gr.Slider(
+            minimum=-30,
+            maximum=0,
+            value=-5,
+            step=0.5,
+            label="Loss threshold (%)"
+        )
+
     graph = gr.Plot(show_label=False)
     message = gr.Markdown()
 
@@ -115,7 +136,8 @@ with gr.Blocks(title="Return distributions") as demo:
         start_input,
         end_input,
         bins_input,
-        frequency_input
+        frequency_input,
+        loss_input
     ]
     
     outputs = [graph, message]
