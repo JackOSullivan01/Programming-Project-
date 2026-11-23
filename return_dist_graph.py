@@ -16,7 +16,7 @@ df = pd.read_csv(
 
 
 # Gradio runs this function whenever an input changes
-def draw_histogram(sector, start_date, end_date):
+def draw_histogram(sector, start_date, end_date, bins):
 
     # Convert the user's text inputs into dates
     start = pd.to_datetime(start_date, errors="coerce")
@@ -42,7 +42,7 @@ def draw_histogram(sector, start_date, end_date):
 
     ax.hist(
         sector_returns,
-        bins=30,
+        bins=int(bins),
         color="#2563EB",
         edgecolor="white"
     )
@@ -79,10 +79,18 @@ with gr.Blocks(title="Return distributions") as demo:
             label="End date · YYYY-MM-DD"
         )
 
+        bins_input = gr.Slider(
+            minimum=10,
+            maximum=100,
+            value=30,
+            step=5,
+            label="Number of bins"
+        )
+
     graph = gr.Plot(show_label=False)
     message = gr.Markdown()
 
-    inputs = [sector_input, start_input, end_input]
+    inputs = [sector_input, start_input, end_input, bins_input]
     outputs = [graph, message]
 
     # Draw the initial graph when the page opens
