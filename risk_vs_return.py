@@ -1,9 +1,38 @@
-from math import isfinite
+from math import ceil, floor, isfinite
 from pathlib import Path
+from uuid import uuid4
 
 import gradio as gr
 import pandas as pd
 import plotly.graph_objects as go
+
+
+PANEL_CSS = """
+.gradio-container {
+    max-width: 1240px !important;
+    margin-inline: auto !important;
+    padding: clamp(14px, 3vw, 36px) !important;
+}
+.risk-panel {
+    gap: 18px !important;
+}
+.risk-panel h1 {
+    font-size: clamp(26px, 4vw, 36px);
+    letter-spacing: -0.035em;
+    margin: 0;
+}
+.risk-panel .risk-controls {
+    border: 1px solid var(--border-color-primary);
+    border-radius: 14px;
+    padding: 16px;
+    background: var(--background-fill-primary);
+}
+.risk-panel .risk-chart {
+    border: 1px solid var(--border-color-primary);
+    border-radius: 14px;
+    overflow: hidden;
+}
+"""
 
 
 def risk_vs_return_panel(returns):
@@ -22,8 +51,8 @@ def risk_vs_return_panel(returns):
         "Annual": "YE",
     }
     palette = [
-        "#8EAEFF", "#73D6BD", "#F6A6B2", "#B0D783",
-        "#F0B485", "#C3A5FF", "#83CFEC", "#E3D18B",
+        "#315E9D", "#147B78", "#AD506D", "#5C753A",
+        "#AE652D", "#7556A6", "#237994", "#8B6D2B",
     ]
     colors = {
         name: palette[i % len(palette)]
@@ -157,7 +186,7 @@ def risk_vs_return_panel(returns):
                 marker=dict(
                     size=11,
                     color=[colors[name] for name in summary.index],
-                    line=dict(color="#242527", width=1),
+                    line=dict(color="#FFFFFF", width=1.5),
                 ),
                 hovertemplate=(
                     "<b>%{text}</b><br>"
@@ -177,7 +206,7 @@ def risk_vs_return_panel(returns):
                 x1=target_volatility,
                 y0=target_return,
                 y1=top,
-                fillcolor="rgba(209, 213, 219, 0.16)",
+                fillcolor="rgba(20, 123, 120, 0.09)",
                 line_width=0,
                 layer="below",
             )
@@ -185,8 +214,9 @@ def risk_vs_return_panel(returns):
         if target_return is not None:
             fig.add_hline(
                 y=target_return,
+                name="target-return",
                 line_dash="dash",
-                line_color="#F1B96A",
+                line_color="#AD642C",
                 annotation_text=f"Target return {target_return:g}%",
                 annotation_position="top right",
             )
@@ -194,19 +224,22 @@ def risk_vs_return_panel(returns):
         if show_volatility_target:
             fig.add_vline(
                 x=target_volatility,
+                name="target-volatility",
                 line_dash="dash",
-                line_color="#83A9FF",
+                line_color="#315E9D",
                 annotation_text=f"Target volatility {target_volatility:g}%",
                 annotation_position="top right",
             )
 
         fig.update_layout(
-            template="plotly_dark",
-            paper_bgcolor="#242527",
-            plot_bgcolor="#242527",
+            template="plotly_white",
+            paper_bgcolor="#FFFFFF",
+            plot_bgcolor="#FFFFFF",
+            font=dict(family="Inter, system-ui, sans-serif", color="#263B53"),
+            hoverlabel=dict(bgcolor="#172B43", font_color="#FFFFFF"),
             hovermode="closest",
             showlegend=False,
-            margin=dict(l=65, r=45, t=45, b=55),
+            margin=dict(l=65, r=35, t=40, b=65),
             height=480,
         )
         fig.update_xaxes(
@@ -220,7 +253,7 @@ def risk_vs_return_panel(returns):
             title_text=return_label,
             range=[bottom, top],
             ticksuffix="%",
-            gridcolor="#45474D",
+            gridcolor="#E5EBF2",
             zeroline=False,
         )
 
@@ -232,98 +265,131 @@ def risk_vs_return_panel(returns):
         )
         return "\n\n".join(messages), fig, table
 
-    with gr.Group():
-        gr.Markdown("## Risk vs Return")
+    def slider_settings(figure, return_target, volatility_target):
+        # Keep the current targets in range when filters change.
+        returns = [return_target, -2, 2]
+        volatility = [volatility_target, 5]
+        if figure is not None:
+            returns.extend(figure.data[0].y)
+            volatility.extend(figure.data[0].x)
 
-        selected = gr.Dropdown(
-            choices=industries,
-            value=industries,
-            multiselect=True,
-            label="Industries",
+        return (
+            dict(minimum=floor(min(returns) * 1.2),
+                 maximum=ceil(max(returns) * 1.2), step=0.01),
+            dict(minimum=0, maximum=ceil(max(volatility) * 1.2), step=0.01),
         )
 
-        with gr.Row():
-            start = gr.DateTime(
-                label="Start date",
-                value=first_date,
-                include_time=False,
-                type="string",
-            )
-            end = gr.DateTime(
-                label="End date",
-                value=last_date,
-                include_time=False,
-                type="string",
-            )
-            frequency = gr.Dropdown(
-                choices=list(frequencies),
-                value=default_frequency,
-                label="Frequency",
-            )
-
-        with gr.Row():
-            risk = gr.Dropdown(
-                choices=["Volatility", "Downside deviation"],
-                value="Volatility",
-                label="Risk measure",
-            )
-            target_return = gr.Number(
-                label="Target return (%)",
-                value=default_return_target,
-            )
-            target_volatility = gr.Number(
-                label="Target volatility (%)",
-                value=default_volatility_target,
-            )
-
-        gr.Markdown(
-            "Targets use the selected frequency. "
-            "The volatility target applies in Volatility mode."
+    def update_filters(
+        selected, start, end, risk_measure, frequency,
+        target_return, target_volatility,
+    ):
+        status, figure, table = update_chart(
+            selected, start, end, risk_measure, frequency,
+            target_return, target_volatility,
+        )
+        return_range, volatility_range = slider_settings(
+            figure, target_return, target_volatility,
+        )
+        return (
+            status, figure, table,
+            gr.update(**return_range),
+            gr.update(**volatility_range, interactive=risk_measure == "Volatility"),
         )
 
-        initial_status, initial_plot, initial_table = update_chart(
-            industries,
-            first_date,
-            last_date,
-            "Volatility",
-            default_frequency,
-            default_return_target,
-            default_volatility_target,
-        )
+    initial_status, initial_plot, initial_table = update_chart(
+        industries, first_date, last_date, "Volatility", default_frequency,
+        default_return_target, default_volatility_target,
+    )
+    return_range, volatility_range = slider_settings(
+        initial_plot, default_return_target, default_volatility_target,
+    )
+    panel_id = f"risk-return-{uuid4().hex}"
 
+    with gr.Column(elem_classes=["risk-panel"]):
+        gr.Markdown("# Risk vs Return")
+
+        with gr.Column(elem_classes=["risk-controls"]):
+            selected = gr.Dropdown(
+                choices=industries,
+                value=industries,
+                multiselect=True,
+                label="Industries",
+            )
+            with gr.Row():
+                start = gr.DateTime(
+                    label="Start date", value=first_date,
+                    include_time=False, type="string",
+                )
+                end = gr.DateTime(
+                    label="End date", value=last_date,
+                    include_time=False, type="string",
+                )
+                frequency = gr.Dropdown(
+                    choices=list(frequencies), value=default_frequency,
+                    label="Frequency",
+                )
+                risk = gr.Dropdown(
+                    choices=["Volatility", "Downside deviation"],
+                    value="Volatility", label="Risk measure",
+                )
+
+            with gr.Row():
+                target_return = gr.Slider(
+                    **return_range, label="Minimum target return (%)",
+                    value=default_return_target,
+                )
+                target_volatility = gr.Slider(
+                    **volatility_range, label="Maximum target volatility (%)",
+                    value=default_volatility_target,
+                )
+
+            gr.Markdown(
+                "Targets use the selected frequency. "
+                "The volatility target applies in Volatility mode."
+            )
+
+        plot = gr.Plot(
+            value=initial_plot, show_label=False, elem_classes=["risk-chart"],
+        )
         status = gr.Markdown(initial_status)
-        plot = gr.Plot(value=initial_plot, show_label=False)
         table = gr.Dataframe(
-            value=initial_table,
-            interactive=False,
-            label="Industry statistics",
+            value=initial_table, interactive=False, label="Industry statistics",
         )
 
+        chart_inputs = [
+            selected, start, end, risk, frequency,
+            target_return, target_volatility,
+        ]
         gr.on(
-            triggers=[
-                selected.change,
-                start.change,
-                end.change,
-                risk.change,
-                frequency.change,
-                target_return.change,
-                target_volatility.change,
-            ],
+            triggers=[selected.change, start.change, end.change,
+                      risk.change, frequency.change],
+            fn=update_filters,
+            trigger_mode="always_last",
+            concurrency_id=panel_id,
+            inputs=chart_inputs,
+            outputs=[status, plot, table, target_return, target_volatility],
+        )
+        gr.on(
+            triggers=[target_return.input, target_volatility.input],
             fn=update_chart,
             trigger_mode="always_last",
-            inputs=[
-                selected, start, end, risk, frequency,
-                target_return, target_volatility,
-            ],
+            concurrency_id=panel_id,
+            inputs=chart_inputs,
             outputs=[status, plot, table],
         )
 
 
 if __name__ == "__main__":
     csv_path = Path(__file__).with_name("industry_returns_clean.csv")
+    if not csv_path.is_file():
+        csv_path = csv_path.parent / "upload" / csv_path.name
     returns = pd.read_csv(csv_path)
 
     with gr.Blocks() as app:
         risk_vs_return_panel(returns)
 
-    app.launch(server_name="0.0.0.0")
+    theme = gr.themes.Soft(
+        primary_hue="teal", neutral_hue="slate",
+        font=["Inter", "system-ui", "sans-serif"],
+    )
+    app.launch(server_name="0.0.0.0", theme=theme, css=PANEL_CSS)
