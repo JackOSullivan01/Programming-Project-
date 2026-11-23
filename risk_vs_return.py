@@ -276,12 +276,10 @@ def risk_vs_return_panel(returns):
                 value=default_volatility_target,
             )
 
-        with gr.Row():
-            gr.Markdown(
-                "Targets use the selected frequency. "
-                "The volatility target applies in Volatility mode."
-            )
-            update = gr.Button("Update chart", variant="primary")
+        gr.Markdown(
+            "Targets use the selected frequency. "
+            "The volatility target applies in Volatility mode."
+        )
 
         initial_status, initial_plot, initial_table = update_chart(
             industries,
@@ -301,8 +299,18 @@ def risk_vs_return_panel(returns):
             label="Industry statistics",
         )
 
-        update.click(
-            update_chart,
+        gr.on(
+            triggers=[
+                selected.change,
+                start.change,
+                end.change,
+                risk.change,
+                frequency.change,
+                target_return.change,
+                target_volatility.change,
+            ],
+            fn=update_chart,
+            trigger_mode="always_last",
             inputs=[
                 selected, start, end, risk, frequency,
                 target_return, target_volatility,
