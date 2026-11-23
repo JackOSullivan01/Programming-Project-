@@ -18,6 +18,64 @@ df = pd.read_csv(
     index_col="Date"
 ).sort_index()
 
+#Use the same sector colours across every graph
+PALETTE = {
+    "Technology": "#245A91",
+    "Financials": "#B17822",
+    "Healthcare": "#087F83",
+    "Energy": "#B84A42",
+    "Consumer goods": "#79538F",
+    "Industrials": "#3A7A54",
+    "Utilities": "#8D653F",
+    "Real estate": "#445365"
+}
+
+
+#Apply consistent styling
+def style_figure(fig):
+    fig.set_facecolor("white")
+
+    for ax in fig.axes:
+        if not ax.get_visible():
+            continue
+
+        ax.set_facecolor("white")
+        ax.set_axisbelow(True)
+
+        #Keep subtle horizontal gridlines
+        ax.grid(axis="y", color="#E4E9EF", linewidth=0.7)
+        ax.grid(axis="x", visible=False)
+
+        #Remove unnecessary borders
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.spines["left"].set_visible(False)
+        ax.spines["bottom"].set_color("#D4DCE5")
+
+        #Style labels and titles
+        ax.tick_params(
+            axis="both",
+            labelsize=9,
+            colors="#637084",
+            length=0,
+            pad=6
+        )
+
+        ax.xaxis.label.set_color("#637084")
+        ax.yaxis.label.set_color("#637084")
+        ax.title.set_color("#17283E")
+        ax.title.set_fontweight("bold")
+
+        #Keep legends light and compact
+        legend = ax.get_legend()
+
+        if legend is not None:
+            legend.set_frame_on(False)
+
+            for text in legend.get_texts():
+                text.set_fontsize(8)
+                text.set_color("#17283E")
+
 
 # Gradio runs this function whenever an input changes
 def draw_histogram(
@@ -105,7 +163,7 @@ def draw_histogram(
             ax.scatter(
                 theoretical,
                 observed,
-                color="#245A91",
+                color=PALETTE[selected_sector],
                 s=12,
                 alpha=0.65,
                 linewidths=0
@@ -130,6 +188,7 @@ def draw_histogram(
         for i in range(number_of_sectors, rows * columns):
             axes.flat[i].set_visible(False)
 
+        style_figure(fig)
         plt.close(fig)
 
         return fig, ""
@@ -161,6 +220,7 @@ def draw_histogram(
                 probabilities,
                 where="post",
                 linewidth=1.8,
+                color=PALETTE[selected_sector],
                 label=selected_sector
             )
 
@@ -199,6 +259,7 @@ def draw_histogram(
         ax.set_ylabel("Proportion of observations at or below return")
         ax.legend(frameon=False, fontsize=8)
 
+        style_figure(fig)
         plt.close(fig)
 
         return fig, ""
@@ -233,7 +294,10 @@ def draw_histogram(
                 x="Return (%)",
                 y="Sector",
                 order=sector,
-                color="#245A91",
+                hue="Sector",
+                palette=PALETTE,
+                dodge=False,
+                legend=False,
                 width=0.5,
                 linewidth=1,
                 fliersize=2.5,
@@ -247,7 +311,10 @@ def draw_histogram(
                 x="Return (%)",
                 y="Sector",
                 order=sector,
-                color="#087F83",
+                hue="Sector",
+                palette=PALETTE,
+                dodge=False,
+                legend=False,
                 inner="quart",
                 cut=0,
                 linewidth=1,
@@ -323,6 +390,7 @@ def draw_histogram(
         ax.set_ylabel("")
         ax.legend(frameon=False, fontsize=8, loc="best")
 
+        style_figure(fig)
         plt.close(fig)
 
         return fig, ""
@@ -356,7 +424,7 @@ def draw_histogram(
             sector_returns[selected_sector],
             bins=edges,
             density=True,
-            color="#2563EB",
+            color=PALETTE[selected_sector],
             edgecolor="white"
         )
 
@@ -463,6 +531,7 @@ def draw_histogram(
     for i in range(number_of_sectors, rows * columns):
         axes.flat[i].set_visible(False)
 
+    style_figure(fig)
     plt.close(fig)
 
     # Return the graph and clear any previous message
