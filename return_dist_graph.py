@@ -1,4 +1,5 @@
 from pathlib import Path
+from scipy import stats
 
 import gradio as gr
 import pandas as pd
@@ -20,7 +21,7 @@ df = pd.read_csv(
 # Gradio runs this function whenever an input changes
 def draw_histogram(
         sector, start_date, end_date, bins, frequency, loss_threshold,
-        show_curve
+        show_curve, show_normal
 ):
 
     if not sector:
@@ -105,6 +106,33 @@ def draw_histogram(
                 ax=ax
             )
 
+         #Calculate the sector's average return and standard deviation
+        mean_return = values.mean()
+        standard_deviation = values.std()
+
+        #Draw a normal reference with the same mean and standard deviation
+        if show_normal and len(values) >= 3 and standard_deviation > 0:
+
+            #Create evenly spaced return values across the histogram
+            x_values = np.linspace(edges[0], edges[-1], 300)
+
+            # Calculate the normal probability density at each return value
+            normal_density = stats.norm.pdf(
+                x_values,
+                loc=mean_return,
+                scale=standard_deviation
+            )
+
+            #Use a dashed line to distinguish it from the density curve
+            ax.plot(
+                x_values,
+                normal_density,
+                color="#637084",
+                linestyle="--",
+                linewidth=1.8,
+                label="Normal reference"
+            )
+
         #Mark the user's chosen loss threshold
         ax.axvline(
             loss_threshold,
@@ -180,6 +208,12 @@ with gr.Blocks(title="Return distributions") as demo:
             label="Show density curve"
         )
 
+        #Let the user compare returns with a fitted normal distribution
+        normal_input = gr.Checkbox(
+            value=False,
+            label="Show normal reference"
+        )
+
     graph = gr.Plot(show_label=False)
     message = gr.Markdown()
 
@@ -190,7 +224,8 @@ with gr.Blocks(title="Return distributions") as demo:
         bins_input,
         frequency_input,
         loss_input,
-        curve_input
+        curve_input,
+        normal_input
     ]
     
     outputs = [graph, message]
