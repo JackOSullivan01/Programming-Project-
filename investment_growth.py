@@ -138,13 +138,19 @@ def build_panel(csv_path):
                         label="End year",
                         min_width=90,
                     )
-                starting_amount = gr.Number(
-                    value=1000, minimum=0, label="Starting investment ($)"
-                )
-                contribution = gr.Number(
-                    value=100, minimum=0, label="Monthly contribution ($)",
-                    info="Added at the end of each month.",
-                )
+                    starting_amount = gr.Number(
+                        value=1000,
+                        minimum=0,
+                        step=100,
+                        label="Starting investment ($)",
+                    )
+                    contribution = gr.Number(
+                        value=100,
+                        minimum=0,
+                        step=25,
+                        label="Monthly contribution ($)",
+                        info="Added at the end of each month.",
+                    )
 
         with gr.Column(scale=3, min_width=300):
             chart = gr.Plot(
