@@ -4,6 +4,7 @@ import gradio as gr
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import seaborn as sns
 
 
 # Load the cleaned dataset
@@ -18,7 +19,8 @@ df = pd.read_csv(
 
 # Gradio runs this function whenever an input changes
 def draw_histogram(
-        sector, start_date, end_date, bins, frequency, loss_threshold
+        sector, start_date, end_date, bins, frequency, loss_threshold,
+        show_curve
 ):
 
     if not sector:
@@ -90,6 +92,19 @@ def draw_histogram(
             edgecolor="white"
         )
 
+        values = sector_returns[selected_sector].dropna()
+
+        #Draw the curve if selected and enough different values exist
+        if show_curve and len(values) >= 3 and values.nunique() > 1:
+            sns.kdeplot(
+                x=values,
+                color="#17345C",
+                linewidth=2,
+                cut=0,
+                label="Density curve",
+                ax=ax
+            )
+
         #Mark the user's chosen loss threshold
         ax.axvline(
             loss_threshold,
@@ -159,6 +174,12 @@ with gr.Blocks(title="Return distributions") as demo:
             label="Loss threshold (%)"
         )
 
+        #Let the user show or hide the density curves
+        curve_input = gr.Checkbox(
+            value=True,
+            label="Show density curve"
+        )
+
     graph = gr.Plot(show_label=False)
     message = gr.Markdown()
 
@@ -168,7 +189,8 @@ with gr.Blocks(title="Return distributions") as demo:
         end_input,
         bins_input,
         frequency_input,
-        loss_input
+        loss_input,
+        curve_input
     ]
     
     outputs = [graph, message]
