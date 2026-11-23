@@ -1,5 +1,6 @@
 from pathlib import Path
 from scipy import stats
+from matplotlib.ticker import PercentFormatter
 
 import gradio as gr
 import pandas as pd
@@ -60,7 +61,76 @@ def draw_histogram(
     if sector_returns.empty:
         return None, "There are no observations in this period."
 
-      #Draw box or violin plots when selected
+     #Draw the cumulative probability of returns for each sector
+    if chart_type == "Cumulative probability":
+
+        fig, ax = plt.subplots(
+            figsize=(10, 4.5),
+            layout="constrained"
+        )
+
+        for selected_sector in sector:
+            #Arrange returns from smallest to largest
+            values = np.sort(
+                sector_returns[selected_sector].dropna().to_numpy()
+            )
+
+            #Skip sectors with no available returns
+            if len(values) == 0:
+                continue
+
+            #Calculate the cumulative proportion of observations
+            probabilities = np.arange(1, len(values) + 1) / len(values)
+
+            #Draw a step curve because these are observed probabilities
+            ax.step(
+                values,
+                probabilities,
+                where="post",
+                linewidth=1.8,
+                label=selected_sector
+            )
+
+        #Mark the user's chosen loss threshold
+        ax.axvline(
+            loss_threshold,
+            color="#B84A42",
+            linestyle="--",
+            linewidth=1.5,
+            label=f"Loss threshold: {loss_threshold}%"
+        )
+
+        #Show the selected lower-tail probability
+        if show_tail:
+            tail_probability = 1 - confidence / 100
+
+            ax.axhline(
+                tail_probability,
+                color="#637084",
+                linestyle=":",
+                linewidth=1.3,
+                label=f"Lower {100 - confidence:g}% probability"
+            )
+
+        #Display probabilities as percentages from 0% to 100%
+        ax.set_ylim(0, 1)
+        ax.yaxis.set_major_formatter(PercentFormatter(1))
+
+        ax.set_title(
+            f"{frequency} cumulative return probabilities",
+            loc="left",
+            fontweight="bold"
+        )
+
+        ax.set_xlabel(f"{frequency} return (%)")
+        ax.set_ylabel("Proportion of observations at or below return")
+        ax.legend(frameon=False, fontsize=8)
+
+        plt.close(fig)
+
+        return fig, ""
+
+    #Draw box or violin plots when selected
     if chart_type in ["Box plot", "Violin plot"]:
 
         #Arrange the sector returns into a table for Seaborn
@@ -80,6 +150,8 @@ def draw_histogram(
             figsize=(10, max(4, len(sector) * 0.6)),
             layout="constrained"
         )
+
+        
 
         if chart_type == "Box plot":
             #Show the median, quartiles, whiskers and outliers
@@ -398,7 +470,13 @@ with gr.Blocks(title="Return distributions") as demo:
 
     #Let the user switch between distribution chart types
     chart_input = gr.Dropdown(
-        choices=["Histogram", "Box plot", "Violin plot"],
+        choices=[
+            "Histogram",
+            "Box plot",
+            "Violin plot",
+            "Cumulative probability"
+            
+        ],
         value="Histogram",
         label="Chart type"
     )
