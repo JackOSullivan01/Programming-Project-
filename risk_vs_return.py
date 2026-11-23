@@ -202,25 +202,35 @@ def risk_vs_return_panel(returns):
                 .sort_values(return_column, ascending=False)
                 .index.tolist()
             )
-            messages.append(
-                f"**{len(matching_industries)} of {len(summary)} "
-                f"{'industry meets' if len(summary) == 1 else 'industries meet'} "
-                "both targets.**"
+
+            industry_text = (
+                "industry meets" if len(summary) == 1 else "industries meet"
             )
+            result = (
+                f"**{len(matching_industries)} of {len(summary)} "
+                f"{industry_text} both targets.**"
+            )
+            if matching_industries:
+                result += "  \n" + ", ".join(matching_industries)
+
+            messages.append(result)
+
             period = frequency.lower()
             messages.append(
                 f"The shaded area shows at least {target_return:g}% average "
-                f"{period} return and at most {target_volatility:g}% {period} volatility."
+                f"{period} return and at most {target_volatility:g}% "
+                f"{period} volatility."
             )
-            if matching_industries:
-                messages.append(", ".join(matching_industries))
 
         elif target_return is not None:
             messages.append(
                 f"The dashed line marks the {target_return:g}% average "
                 f"{frequency.lower()} return target. "
-                + ("The volatility target applies in Volatility mode."
-                   if risk_measure != "Volatility" else "")
+                + (
+                    "The volatility target applies in Volatility mode."
+                    if risk_measure != "Volatility"
+                    else ""
+                )
             )
 
         omitted = len(selected) - len(summary)
