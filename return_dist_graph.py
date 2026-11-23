@@ -2,6 +2,7 @@ from pathlib import Path
 
 import gradio as gr
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
 
 
@@ -19,6 +20,9 @@ df = pd.read_csv(
 def draw_histogram(
         sector, start_date, end_date, bins, frequency, loss_threshold
 ):
+
+    if not sector:
+        return None, "Choose at least one sector."
 
     # Convert the text inputs into dates
     start = pd.to_datetime(start_date, errors="coerce")
@@ -53,30 +57,56 @@ def draw_histogram(
     if sector_returns.empty:
         return None, "There are no observations in this period."
 
-    # Create the histogram
-    fig, ax = plt.subplots(figsize=(8, 4))
+    all_values = sector_returns.to_numpy().flatten()
 
-    ax.hist(
-        sector_returns,
-        bins=int(bins),
-        color="#2563EB",
-        edgecolor="white"
+    edges = np.histogram_bin_edges(
+        all_values,
+        bins=int(bins)
     )
 
-    #Mark the user's chosen loss threshold
-    ax.axvline(
-        loss_threshold,
-        color="#DC2626",
-        linestyle="--",
-        linewidth=1.5,
-        label=f"Loss threshold: {loss_threshold}%"
+    number_of_sectors = len(sector)
+    columns = 1 if number_of_sectors == 1 else 2
+    rows = (number_of_sectors + columns - 1) // columns
+
+    #Creates the histogram
+    fig, axes = plt.subplots(
+        rows,
+        columns,
+        figsize=(8, 3 * rows),
+        sharex=True,
+        sharey=True,
+        squeeze=False,
+        layout="constrained"
     )
 
-    ax.legend(frameon=False)
+    for i, selected_sector in enumerate(sector):
+        ax = axes.flat[i]
 
-    ax.set_title(f"{sector}: {frequency.lower()} returns")
-    ax.set_xlabel(f"{frequency} return (%)")
-    ax.set_ylabel("Number of observations")
+        ax.hist(
+            sector_returns[selected_sector],
+            bins=edges,
+            density=True,
+            color="#2563EB",
+            edgecolor="white"
+        )
+
+        #Mark the user's chosen loss threshold
+        ax.axvline(
+            loss_threshold,
+            color="#DC2626",
+            linestyle="--",
+            linewidth=1.5,
+            label=f"Loss threshold: {loss_threshold}%"
+        )
+
+        ax.legend(frameon=False)
+
+        ax.set_title(f"{selected_sector}: {frequency.lower()} returns")
+        ax.set_xlabel(f"{frequency} return (%)")
+        ax.set_ylabel("Density")
+
+    for i in range(number_of_sectors, rows * columns):
+        axes.flat[i].set_visible(False)
 
     plt.close(fig)
 
@@ -92,7 +122,8 @@ with gr.Blocks(title="Return distributions") as demo:
     with gr.Row():
         sector_input = gr.Dropdown(
             choices=list(df.columns),
-            value=df.columns[0],
+            value=[df.columns[0]],
+            multiselect=True,
             label="Sector"
         )
 
