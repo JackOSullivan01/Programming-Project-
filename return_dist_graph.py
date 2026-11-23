@@ -472,91 +472,109 @@ def draw_histogram(
 # Create the webpage
 with gr.Blocks(title="Return distributions") as demo:
 
-    gr.Markdown("# Return distributions")
+    gr.Markdown("## Return distributions")
 
+    #Keep sector selection, frequency and chart choice together
     with gr.Row():
         sector_input = gr.Dropdown(
             choices=list(df.columns),
             value=[df.columns[0]],
             multiselect=True,
-            label="Sector"
-        )
-
-        start_input = gr.Textbox(
-            value=df.index.min().strftime("%Y-%m-%d"),
-            label="Start date · YYYY-MM-DD"
-        )
-
-        end_input = gr.Textbox(
-            value=df.index.max().strftime("%Y-%m-%d"),
-            label="End date · YYYY-MM-DD"
-        )
-
-        bins_input = gr.Slider(
-            minimum=10,
-            maximum=100,
-            value=30,
-            step=5,
-            label="Number of bins"
+            label="Sectors",
+            scale=3,
+            min_width=180
         )
 
         frequency_input = gr.Dropdown(
             choices=["Daily", "Monthly"],
             value="Daily",
-            label="Return frequency"
+            label="Frequency",
+            scale=1,
+            min_width=100
         )
 
-        loss_input = gr.Slider(
+        chart_input = gr.Dropdown(
+            choices=[
+                "Histogram",
+                "Box plot",
+                "Violin plot",
+                "Cumulative probability",
+                "Normal Q-Q"
+            ],
+            value="Histogram",
+            label="Analysis",
+            scale=2,
+            min_width=160
+        )
+
+    #Keep the dates and loss threshold in a second compact row
+    with gr.Row():
+        start_input = gr.Textbox(
+            value=df.index.min().strftime("%Y-%m-%d"),
+            label="From · YYYY-MM-DD",
+            min_width=120
+        )
+
+        end_input = gr.Textbox(
+            value=df.index.max().strftime("%Y-%m-%d"),
+            label="To · YYYY-MM-DD",
+            min_width=120
+        )
+
+        loss_input = gr.Number(
+            value=-5,
             minimum=-30,
             maximum=0,
-            value=-5,
             step=0.5,
-            label="Loss threshold (%)"
+            label="Loss threshold (%)",
+            min_width=100
         )
 
-        #Let the user show or hide the density curves
-        curve_input = gr.Checkbox(
-            value=True,
-            label="Show density curve"
-        )
+    #Hide the additional options until the user needs them
+    with gr.Accordion("Analysis settings", open=False):
 
-        #Let the user compare returns with a fitted normal distribution
-        normal_input = gr.Checkbox(
-            value=False,
-            label="Show normal reference"
-        )
+        with gr.Row():
+            curve_input = gr.Checkbox(
+                value=True,
+                label="Density curve · histogram"
+            )
 
-    #Let the user show or hide the downside-tail analysis
-    tail_input = gr.Checkbox(
-        value=True,
-        label="Show downside tail"
+            normal_input = gr.Checkbox(
+                value=False,
+                label="Normal reference · histogram"
+            )
+
+            tail_input = gr.Checkbox(
+                value=True,
+                label="Downside tail"
+            )
+
+        with gr.Row():
+            bins_input = gr.Slider(
+                minimum=10,
+                maximum=100,
+                value=30,
+                step=5,
+                label="Histogram bins"
+            )
+
+            confidence_input = gr.Slider(
+                minimum=90,
+                maximum=99,
+                value=95,
+                step=1,
+                label="Tail confidence (%)"
+            )
+
+    #Display the graph without an extra component heading
+    graph = gr.Plot(
+        show_label=False,
+        container=False
     )
 
-    #Choose how much of the lower tail to highlight
-    confidence_input = gr.Slider(
-        minimum=90,
-        maximum=99,
-        value=95,
-        step=1,
-        label="Tail confidence (%)"
-    )
-
-    #Let the user switch between distribution chart types
-    chart_input = gr.Dropdown(
-        choices=[
-            "Histogram",
-            "Box plot",
-            "Violin plot",
-            "Cumulative probability",
-            "Normal Q-Q"          
-        ],
-        value="Histogram",
-        label="Chart type"
-    )
-
-    graph = gr.Plot(show_label=False)
     message = gr.Markdown()
 
+    #Keep this order identical to the function's parameters
     inputs = [
         sector_input,
         start_input,
@@ -567,12 +585,10 @@ with gr.Blocks(title="Return distributions") as demo:
         curve_input,
         normal_input,
         tail_input,
-        confidence_input
+        confidence_input,
+        chart_input
     ]
 
-    #Pass the chart choice as the function's final input
-    inputs.append(chart_input)
-    
     outputs = [graph, message]
 
     # Draw the initial graph when the page opens
@@ -598,4 +614,27 @@ with gr.Blocks(title="Return distributions") as demo:
 
 # Start the app
 if __name__ == "__main__":
-    demo.launch(inbrowser=True)
+
+    #Use compact controls and a restrained slate colourway
+    theme = gr.themes.Base(
+        primary_hue="slate",
+        secondary_hue="teal",
+        neutral_hue="slate",
+        spacing_size="sm",
+        radius_size="sm",
+        text_size="sm"
+    ).set(
+        body_background_fill="#EEF1F5",
+        background_fill_primary="#EEF1F5",
+        background_fill_secondary="#FFFFFF",
+        block_background_fill="#FFFFFF",
+        block_border_color="#D4DCE5",
+        body_text_color="#17283E",
+        block_title_text_color="#17283E",
+        input_background_fill="#F8FAFC"
+    )
+
+    demo.launch(
+        inbrowser=True,
+        theme=theme
+    )
