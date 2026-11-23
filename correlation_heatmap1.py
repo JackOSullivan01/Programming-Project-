@@ -83,7 +83,6 @@ ALL_SECTORS = list(RAW_DF.columns)
 MIN_YEAR = int(RAW_DF.index.year.min())
 MAX_YEAR = int(RAW_DF.index.year.max())
 
-
 def update_correlation_panel(
     selected_sectors: list[str],
     start_year: int,
@@ -114,7 +113,9 @@ def update_correlation_panel(
         empty_fig.update_layout(
             xaxis=dict(visible=False),
             yaxis=dict(visible=False),
-            plot_bgcolor="white",
+            template="plotly_dark",
+            plot_bgcolor="#111827",
+            paper_bgcolor="#111827",
             height=460,
         )
         return empty_fig, "**Selection Notice:** Please choose at least two sectors."
@@ -170,63 +171,125 @@ def update_correlation_panel(
                     f"Period: {start_year}–{end_year} ({frequency})"
                 )
 
-    # Build diverging RdBu heatmap matching the Industry Performance Explorer palette
-    fig = go.Figure(
-        data=go.Heatmap(
-            z=z_vals,
-            x=selected_sectors,
-            y=selected_sectors,
-            zmin=-1.0,
-            zmax=1.0,
-            zmid=0.0,
-            colorscale="RdBu_r",  # Red = strong positive (+1), Blue = negative (-1)
-            text=text_labels,
-            texttemplate="%{text}" if show_values else None,
-            textfont=dict(size=11, family="Inter, Arial, sans-serif"),
-            hovertext=hover_text,
-            hoverinfo="text",
-            xgap=2,
-            ygap=2,
-            colorbar=dict(
-                title=dict(text="Correlation", side="right"),
-                tickvals=[-1.0, -0.5, 0.0, 0.5, 1.0],
-                tickformat=".2f",
-                thickness=14,
-                len=0.85,
-            ),
+    # Build diverging RdBu heatmap or 3D Surface matching the Industry Performance Explorer palette
+    if triangle_mode == "3D Surface":
+        fig = go.Figure(
+            data=go.Surface(
+                z=z_vals,
+                x=list(range(n)),
+                y=list(range(n)),
+                cmin=-1.0,
+                cmax=1.0,
+                cmid=0.0,
+                colorscale="RdBu_r",
+                text=hover_text,
+                hoverinfo="text",
+                colorbar=dict(
+                    title=dict(text="Correlation", side="right"),
+                    tickvals=[-1.0, -0.5, 0.0, 0.5, 1.0],
+                    tickformat=".2f",
+                    thickness=14,
+                    len=0.85,
+                ),
+            )
         )
-    )
 
-    fig.update_layout(
-        title=dict(
-            text=(
-                f"<b>Industry Correlations ({frequency} Returns, {start_year}–{end_year})</b>"
-                f"<br><span style='font-size:12px;color:#64748b;'>"
-                f"{corr_method} r | Threshold |r| ≥ {abs_threshold:.2f} | N = {len(resampled):,} observations"
-                f"</span>"
+        fig.update_layout(
+            title=dict(
+                text=(
+                    f"<b>3D Industry Correlations ({frequency} Returns, {start_year}–{end_year})</b>"
+                    f"<br><span style='font-size:12px;color:#64748b;'>"
+                    f"{corr_method} r | Threshold |r| ≥ {abs_threshold:.2f} | N = {len(resampled):,} observations"
+                    f"</span>"
+                ),
+                x=0.14,
+                y=0.96,
             ),
-            x=0.14,
-            y=0.96,
-        ),
-        xaxis=dict(
-            side="top",
-            tickangle=-25,
-            showgrid=False,
-            zeroline=False,
-        ),
-        yaxis=dict(
-            autorange="reversed",  # Keeps diagonal running top-left to bottom-right
-            showgrid=False,
-            zeroline=False,
-        ),
-        template="plotly_dark",
-        plot_bgcolor="#111827",
-        paper_bgcolor="#111827",
-        font=dict(color="#f3f4f6"),
-        margin=dict(l=90, r=40, t=115, b=30),
-        height=490,
-    )
+            scene=dict(
+                xaxis=dict(
+                    title="",
+                    tickvals=list(range(n)),
+                    ticktext=selected_sectors,
+                    backgroundcolor="#111827",
+                    gridcolor="#374151",
+                ),
+                yaxis=dict(
+                    title="",
+                    tickvals=list(range(n)),
+                    ticktext=selected_sectors,
+                    backgroundcolor="#111827",
+                    gridcolor="#374151",
+                ),
+                zaxis=dict(
+                    title="Correlation (r)",
+                    range=[-1.0, 1.0],
+                    backgroundcolor="#111827",
+                    gridcolor="#374151",
+                ),
+            ),
+            template="plotly_dark",
+            plot_bgcolor="#111827",
+            paper_bgcolor="#111827",
+            font=dict(color="#f3f4f6"),
+            margin=dict(l=20, r=20, t=95, b=20),
+            height=550,
+        )
+    else:
+        fig = go.Figure(
+            data=go.Heatmap(
+                z=z_vals,
+                x=selected_sectors,
+                y=selected_sectors,
+                zmin=-1.0,
+                zmax=1.0,
+                zmid=0.0,
+                colorscale="RdBu_r",  # Red = strong positive (+1), Blue = negative (-1)
+                text=text_labels,
+                texttemplate="%{text}" if show_values else None,
+                textfont=dict(size=11, family="Inter, Arial, sans-serif"),
+                hovertext=hover_text,
+                hoverinfo="text",
+                xgap=2,
+                ygap=2,
+                colorbar=dict(
+                    title=dict(text="Correlation", side="right"),
+                    tickvals=[-1.0, -0.5, 0.0, 0.5, 1.0],
+                    tickformat=".2f",
+                    thickness=14,
+                    len=0.85,
+                ),
+            )
+        )
 
+        fig.update_layout(
+            title=dict(
+                text=(
+                    f"<b>Industry Correlations ({frequency} Returns, {start_year}–{end_year})</b>"
+                    f"<br><span style='font-size:12px;color:#64748b;'>"
+                    f"{corr_method} r | Threshold |r| ≥ {abs_threshold:.2f} | N = {len(resampled):,} observations"
+                    f"</span>"
+                ),
+                x=0.14,
+                y=0.96,
+            ),
+            xaxis=dict(
+                side="top",
+                tickangle=-25,
+                showgrid=False,
+                zeroline=False,
+            ),
+            yaxis=dict(
+                autorange="reversed",  # Keeps diagonal running top-left to bottom-right
+                showgrid=False,
+                zeroline=False,
+            ),
+            template="plotly_dark",
+            plot_bgcolor="#111827",
+            paper_bgcolor="#111827",
+            font=dict(color="#f3f4f6"),
+            margin=dict(l=90, r=40, t=115, b=30),
+            height=490,
+        )
     # Extract strongest and weakest off-diagonal pairs for automated storytelling
     upper_indices = np.triu_indices(n, k=1)
     pair_records = []
@@ -306,7 +369,7 @@ def build_correlation_panel() -> gr.Column:
                 label="Method",
             )
             triangle_dd = gr.Dropdown(
-                choices=["Full Matrix", "Upper Triangle Only", "Lower Triangle Only"],
+               choices=["Full Matrix", "Upper Triangle Only", "Lower Triangle Only", "3D Surface"],
                 value="Full Matrix",
                 label="Matrix view",
             )
