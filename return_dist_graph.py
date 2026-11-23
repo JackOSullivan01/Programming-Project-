@@ -76,6 +76,29 @@ def style_figure(fig):
                 text.set_fontsize(8)
                 text.set_color("#17283E")
 
+# Show the period and number of observations used in the graph
+def add_graph_details(fig, returns, frequency):
+    first_date = returns.index.min().strftime("%d %b %Y")
+    last_date = returns.index.max().strftime("%d %b %Y")
+
+    counts = returns.count()
+    smallest_count = int(counts.min())
+    largest_count = int(counts.max())
+
+    if smallest_count == largest_count:
+        observation_text = f"{smallest_count:,} observations per sector"
+    else:
+        observation_text = (
+            f"{smallest_count:,}–{largest_count:,} observations per sector"
+        )
+
+    fig.suptitle(
+        f"{frequency} returns  |  {first_date} – {last_date}"
+        f"\n{observation_text}",
+        fontsize=10,
+        color="#526174"
+    )
+
 
 # Gradio runs this function whenever an input changes
 def draw_histogram(
@@ -189,6 +212,7 @@ def draw_histogram(
             axes.flat[i].set_visible(False)
 
         style_figure(fig)
+        add_graph_details(fig, sector_returns, frequency)
         plt.close(fig)
 
         return fig, ""
@@ -260,6 +284,7 @@ def draw_histogram(
         ax.legend(frameon=False, fontsize=8)
 
         style_figure(fig)
+        add_graph_details(fig, sector_returns, frequency)
         plt.close(fig)
 
         return fig, ""
@@ -391,6 +416,7 @@ def draw_histogram(
         ax.legend(frameon=False, fontsize=8, loc="best")
 
         style_figure(fig)
+        add_graph_details(fig, sector_returns, frequency)
         plt.close(fig)
 
         return fig, ""
@@ -532,6 +558,7 @@ def draw_histogram(
         axes.flat[i].set_visible(False)
 
     style_figure(fig)
+    add_graph_details(fig, sector_returns, frequency)
     plt.close(fig)
 
     # Return the graph and clear any previous message
