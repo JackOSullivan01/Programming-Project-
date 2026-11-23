@@ -219,8 +219,10 @@ def update_correlation_panel(
             showgrid=False,
             zeroline=False,
         ),
-        plot_bgcolor="#f8fafc",
-        paper_bgcolor="white",
+        template="plotly_dark",
+        plot_bgcolor="#111827",
+        paper_bgcolor="#111827",
+        font=dict(color="#f3f4f6"),
         margin=dict(l=90, r=40, t=115, b=30),
         height=490,
     )
