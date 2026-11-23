@@ -234,7 +234,7 @@ def risk_vs_return_panel(returns):
         fig.update_layout(
             template="plotly_white",
             paper_bgcolor="#FFFFFF",
-            plot_bgcolor="#E8EFF6",
+            plot_bgcolor="#D6E2EE",
             font=dict(family="Inter, system-ui, sans-serif", color="#263B53"),
             hoverlabel=dict(bgcolor="#172B43", font_color="#FFFFFF"),
             hovermode="closest",
