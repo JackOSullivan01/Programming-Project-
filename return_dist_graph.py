@@ -16,26 +16,40 @@ df = pd.read_csv(
 
 
 # Gradio runs this function whenever an input changes
-def draw_histogram(sector, start_date, end_date, bins):
+def draw_histogram(sector, start_date, end_date, bins, frequency):
 
-    # Convert the user's text inputs into dates
+    # Convert the text inputs into dates
     start = pd.to_datetime(start_date, errors="coerce")
     end = pd.to_datetime(end_date, errors="coerce")
 
+    # Check the dates are valid
     if pd.isna(start) or pd.isna(end):
         return None, "Enter dates as YYYY-MM-DD."
 
     if start > end:
         return None, "Choose a start date before the end date."
 
-    # Filter the dates and select the chosen sector
-    selected_data = df.loc[start:end]
+    if frequency == "Monthly":
+        #Compound daily decimal returns within each month
+        monthly = (1 + df[sector]).resample("ME").prod(min_count=1) - 1
 
-    # Convert decimal returns to percentages
-    sector_returns = selected_data[sector].dropna() * 100
+        #Keep months containing missing daily returns as missing
+        missing = df[sector].isna().resample("ME").sum()
+        monthly = monthly.mask(missing > 0)
+
+        #Use only whole calendar months inside the selected dates
+        month_starts = monthly.index.to_period("M").to_timestamp()
+
+        sector_returns = monthly.loc[
+            (month_starts >= start) & (monthly.index <= end)
+    ].dropna() * 100
+
+    else:
+        #Select daily returns within the chosen dates
+        sector_returns = df.loc[start:end, sector].dropna() * 100
 
     if sector_returns.empty:
-        return None, "There are no trading observations in this period."
+        return None, "There are no observations in this period."
 
     # Create the histogram
     fig, ax = plt.subplots(figsize=(8, 4))
@@ -47,9 +61,9 @@ def draw_histogram(sector, start_date, end_date, bins):
         edgecolor="white"
     )
 
-    ax.set_title(f"{sector}: daily returns")
-    ax.set_xlabel("Daily return (%)")
-    ax.set_ylabel("Number of trading days")
+    ax.set_title(f"{sector}: {frequency.lower()} returns")
+    ax.set_xlabel(f"{frequency} return (%)")
+    ax.set_ylabel("Number of observations")
 
     plt.close(fig)
 
@@ -87,10 +101,23 @@ with gr.Blocks(title="Return distributions") as demo:
             label="Number of bins"
         )
 
+        frequency_input = gr.Dropdown(
+            choices=["Daily", "Monthly"],
+            value="Daily",
+            label="Return frequency"
+        )
+
     graph = gr.Plot(show_label=False)
     message = gr.Markdown()
 
-    inputs = [sector_input, start_input, end_input, bins_input]
+    inputs = [
+        sector_input,
+        start_input,
+        end_input,
+        bins_input,
+        frequency_input
+    ]
+    
     outputs = [graph, message]
 
     # Draw the initial graph when the page opens
