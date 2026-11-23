@@ -265,7 +265,7 @@ def update_correlation_panel(
             title=dict(
                 text=(
                     f"<b>Industry Correlations ({frequency} Returns, {start_year}–{end_year})</b>"
-                    f"<br><span style='font-size:12px;color:#64748b;'>"
+                    f"<br><span style='font-size:12px;color:#9ca3af;'>"
                     f"{corr_method} r | Threshold |r| ≥ {abs_threshold:.2f} | N = {len(resampled):,} observations"
                     f"</span>"
                 ),
