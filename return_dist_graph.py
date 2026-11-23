@@ -61,7 +61,80 @@ def draw_histogram(
     if sector_returns.empty:
         return None, "There are no observations in this period."
 
-     #Draw the cumulative probability of returns for each sector
+    if chart_type == "Normal Q-Q":
+
+        #Keep sectors with enough observations for comparison
+        available_sectors = []
+
+        for selected_sector in sector:
+            if sector_returns[selected_sector].count() >= 3:
+                available_sectors.append(selected_sector)
+
+        if not available_sectors:
+            return None, "Choose a period with at least three observations."
+
+        #Create a separate panel for each selected sector
+        number_of_sectors = len(available_sectors)
+        columns = 1 if number_of_sectors == 1 else 2
+        rows = (number_of_sectors + columns - 1) // columns
+
+        fig, axes = plt.subplots(
+            rows,
+            columns,
+            figsize=(10, 3 * rows),
+            sharex=True,
+            sharey=True,
+            squeeze=False,
+            layout="constrained"
+        )
+
+        for i, selected_sector in enumerate(available_sectors):
+            ax = axes.flat[i]
+            values = sector_returns[selected_sector].dropna()
+
+            #Calculate theoretical normal quantiles and observed quantiles
+            quantiles, fitted_line = stats.probplot(
+                values,
+                dist="norm"
+            )
+
+            theoretical, observed = quantiles
+            slope, intercept, correlation = fitted_line
+
+            #Plot the observed returns against theoretical quantiles
+            ax.scatter(
+                theoretical,
+                observed,
+                color="#245A91",
+                s=12,
+                alpha=0.65,
+                linewidths=0
+            )
+
+            #Draw the fitted normal reference line
+            ax.plot(
+                theoretical,
+                slope * theoretical + intercept,
+                color="#17283E",
+                linestyle="--",
+                linewidth=1.5,
+                label="Normal reference"
+            )
+
+            ax.set_title(selected_sector)
+            ax.set_xlabel("Theoretical normal quantile")
+            ax.set_ylabel(f"{frequency} return (%)")
+            ax.legend(frameon=False, fontsize=8)
+
+        #Hide unused panels
+        for i in range(number_of_sectors, rows * columns):
+            axes.flat[i].set_visible(False)
+
+        plt.close(fig)
+
+        return fig, ""
+ 
+    #Draw the cumulative probability of returns for each sector
     if chart_type == "Cumulative probability":
 
         fig, ax = plt.subplots(
@@ -474,8 +547,8 @@ with gr.Blocks(title="Return distributions") as demo:
             "Histogram",
             "Box plot",
             "Violin plot",
-            "Cumulative probability"
-            
+            "Cumulative probability",
+            "Normal Q-Q"          
         ],
         value="Histogram",
         label="Chart type"
