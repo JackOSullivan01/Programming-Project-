@@ -21,7 +21,7 @@ df = pd.read_csv(
 # Gradio runs this function whenever an input changes
 def draw_histogram(
         sector, start_date, end_date, bins, frequency, loss_threshold,
-        show_curve, show_normal
+        show_curve, show_normal, show_tail, confidence
 ):
 
     if not sector:
@@ -133,6 +133,51 @@ def draw_histogram(
                 label="Normal reference"
             )
 
+        #Calculate the lower-tail probability from the confidence level
+        tail_probability = 1 - confidence / 100
+
+        if show_tail:
+            #Find the return below which the selected proportion falls
+            tail_cutoff = values.quantile(tail_probability)
+
+            #Calculate the average return in that lower tail
+            tail_mean = values[values <= tail_cutoff].mean()
+
+            #Shade the lower-tail region
+            ax.axvspan(
+                edges[0],
+                tail_cutoff,
+                color="#B84A42",
+                alpha=0.12
+            )
+
+            #Mark the estimated lower-tail percentile
+            ax.axvline(
+                tail_cutoff,
+                color="#B84A42",
+                linestyle=":",
+                linewidth=1.8,
+                label=f"Lower {100 - confidence:g}% cutoff"
+            )
+
+            #Display the cutoff and average tail return inside the graph
+            ax.text(
+                0.97,
+                0.95,
+                f"Cutoff: {tail_cutoff:.2f}%\n"
+                f"Tail mean: {tail_mean:.2f}%",
+                transform=ax.transAxes,
+                ha="right",
+                va="top",
+                fontsize=8,
+                color="#B84A42",
+                bbox={
+                    "facecolor": "white",
+                    "edgecolor": "none",
+                    "alpha": 0.85
+                }
+            )    
+
         #Mark the user's chosen loss threshold
         ax.axvline(
             loss_threshold,
@@ -214,6 +259,21 @@ with gr.Blocks(title="Return distributions") as demo:
             label="Show normal reference"
         )
 
+    #Let the user show or hide the downside-tail analysis
+    tail_input = gr.Checkbox(
+        value=True,
+        label="Show downside tail"
+    )
+
+    #Choose how much of the lower tail to highlight
+    confidence_input = gr.Slider(
+        minimum=90,
+        maximum=99,
+        value=95,
+        step=1,
+        label="Tail confidence (%)"
+    )
+
     graph = gr.Plot(show_label=False)
     message = gr.Markdown()
 
@@ -225,7 +285,9 @@ with gr.Blocks(title="Return distributions") as demo:
         frequency_input,
         loss_input,
         curve_input,
-        normal_input
+        normal_input,
+        tail_input,
+        confidence_input
     ]
     
     outputs = [graph, message]
