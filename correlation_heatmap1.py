@@ -205,7 +205,7 @@ def update_correlation_panel(
                 f"{corr_method} r | Threshold |r| ≥ {abs_threshold:.2f} | N = {len(resampled):,} observations"
                 f"</span>"
             ),
-            x=0.02,
+            x=0.14,
             y=0.96,
         ),
         xaxis=dict(
