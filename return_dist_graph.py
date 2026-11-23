@@ -21,7 +21,7 @@ df = pd.read_csv(
 # Gradio runs this function whenever an input changes
 def draw_histogram(
         sector, start_date, end_date, bins, frequency, loss_threshold,
-        show_curve, show_normal, show_tail, confidence
+        show_curve, show_normal, show_tail, confidence, chart_type
 ):
 
     if not sector:
@@ -59,6 +59,128 @@ def draw_histogram(
 
     if sector_returns.empty:
         return None, "There are no observations in this period."
+
+      #Draw box or violin plots when selected
+    if chart_type in ["Box plot", "Violin plot"]:
+
+        #Arrange the sector returns into a table for Seaborn
+        records = []
+
+        for selected_sector in sector:
+            for value in sector_returns[selected_sector].dropna():
+                records.append({
+                    "Sector": selected_sector,
+                    "Return (%)": value
+                })
+
+        plot_data = pd.DataFrame(records)
+
+        #Give each sector a separate row for clear comparisons
+        fig, ax = plt.subplots(
+            figsize=(10, max(4, len(sector) * 0.6)),
+            layout="constrained"
+        )
+
+        if chart_type == "Box plot":
+            #Show the median, quartiles, whiskers and outliers
+            sns.boxplot(
+                data=plot_data,
+                x="Return (%)",
+                y="Sector",
+                order=sector,
+                color="#245A91",
+                width=0.5,
+                linewidth=1,
+                fliersize=2.5,
+                ax=ax
+            )
+
+        else:
+            #Show the distribution shape with quartile lines inside
+            sns.violinplot(
+                data=plot_data,
+                x="Return (%)",
+                y="Sector",
+                order=sector,
+                color="#087F83",
+                inner="quart",
+                cut=0,
+                linewidth=1,
+                ax=ax
+            )
+
+        #Show a reference line for zero return
+        ax.axvline(
+            0,
+            color="#637084",
+            linewidth=0.8,
+            alpha=0.6
+        )
+
+        #Mark the user's chosen loss threshold
+        ax.axvline(
+            loss_threshold,
+            color="#B84A42",
+            linestyle="--",
+            linewidth=1.5,
+            label=f"Loss threshold: {loss_threshold}%"
+        )
+
+        #Show the lower percentile and tail mean for each sector
+        if show_tail:
+            tail_probability = 1 - confidence / 100
+
+            for i, selected_sector in enumerate(sector):
+                values = sector_returns[selected_sector].dropna()
+
+                tail_cutoff = values.quantile(tail_probability)
+                tail_mean = values[values <= tail_cutoff].mean()
+
+                #Label each marker type only once in the legend
+                cutoff_label = (
+                    f"Lower {100 - confidence:g}% cutoff"
+                    if i == 0 else "_nolegend_"
+                )
+
+                mean_label = (
+                    "Tail mean"
+                    if i == 0 else "_nolegend_"
+                )
+
+                ax.scatter(
+                    tail_cutoff,
+                    i,
+                    marker="D",
+                    color="#B84A42",
+                    s=35,
+                    zorder=5,
+                    label=cutoff_label
+                )
+
+                ax.scatter(
+                    tail_mean,
+                    i,
+                    marker="x",
+                    color="#17283E",
+                    s=40,
+                    zorder=5,
+                    label=mean_label
+                )
+
+        #Label and display the selected graph
+        ax.set_title(
+            f"{frequency} return distributions",
+            loc="left",
+            fontweight="bold"
+        )
+
+        ax.set_xlabel(f"{frequency} return (%)")
+        ax.set_ylabel("")
+        ax.legend(frameon=False, fontsize=8, loc="best")
+
+        plt.close(fig)
+
+        return fig, ""
 
     all_values = sector_returns.to_numpy().flatten()
 
@@ -274,6 +396,13 @@ with gr.Blocks(title="Return distributions") as demo:
         label="Tail confidence (%)"
     )
 
+    #Let the user switch between distribution chart types
+    chart_input = gr.Dropdown(
+        choices=["Histogram", "Box plot", "Violin plot"],
+        value="Histogram",
+        label="Chart type"
+    )
+
     graph = gr.Plot(show_label=False)
     message = gr.Markdown()
 
@@ -289,6 +418,9 @@ with gr.Blocks(title="Return distributions") as demo:
         tail_input,
         confidence_input
     ]
+
+    #Pass the chart choice as the function's final input
+    inputs.append(chart_input)
     
     outputs = [graph, message]
 
