@@ -1,3 +1,4 @@
+from html import escape
 from math import ceil, floor, isfinite
 from pathlib import Path
 from uuid import uuid4
@@ -14,7 +15,7 @@ PANEL_CSS = """
     padding: clamp(14px, 3vw, 36px) !important;
 }
 .risk-panel {
-    gap: 18px !important;
+    gap: 10px !important;
 }
 .risk-panel h1 {
     font-size: clamp(26px, 4vw, 36px);
@@ -24,15 +25,74 @@ PANEL_CSS = """
 .risk-panel .risk-controls {
     border: 1px solid var(--border-color-primary);
     border-radius: 14px;
-    padding: 16px;
+    padding: 8px 12px;
+    gap: 6px !important;
     background: var(--background-fill-primary);
+}
+.risk-panel .risk-controls .risk-control-row {
+    gap: 8px !important;
+}
+.risk-panel .risk-controls label > span {
+    background: transparent !important;
+    color: var(--body-text-color) !important;
+    padding: 0 !important;
+}
+.risk-panel .risk-result p {
+    margin: 2px 0;
 }
 .risk-panel .risk-chart {
     border: 1px solid var(--border-color-primary);
     border-radius: 14px;
     overflow: hidden;
+    background: #30445C;
 }
 """
+
+
+def add_industry_labels(fig, x, y, x_range, y_range):
+    # Estimate label bounds at a compact desktop chart size.
+    width, height = 560, 430
+    left, right = x_range
+    bottom, top = y_range
+    points = [
+        ((risk - left) / (right - left) * width,
+         (ret - bottom) / (top - bottom) * height)
+        for risk, ret in zip(x, y)
+    ]
+    occupied = [(px - 7, py - 7, px + 7, py + 7) for px, py in points]
+
+    for (name, risk, ret), (px, py) in zip(zip(x.index, x, y), points):
+        half_width = 4 * len(name) + 4
+        offsets = [
+            (0, 18), (0, -18),
+            (half_width + 8, 0), (-half_width - 8, 0),
+            (0, 34), (0, -34),
+        ]
+
+        def placement_cost(offset):
+            dx, dy = offset
+            x0, x1 = px + dx - half_width, px + dx + half_width
+            y0, y1 = py + dy - 8, py + dy + 8
+            outside = max(0, -x0, x1 - width, -y0, y1 - height)
+            overlaps = sum(
+                x0 < r and x1 > l and y0 < t and y1 > b
+                for l, b, r, t in occupied
+            )
+            return (outside > 0, overlaps, outside)
+
+        dx, dy = min(offsets, key=placement_cost)
+        occupied.append((
+            px + dx - half_width, py + dy - 8,
+            px + dx + half_width, py + dy + 8,
+        ))
+        fig.add_annotation(
+            x=risk, y=ret, text=escape(name),
+            showarrow=True, arrowhead=0, arrowwidth=1,
+            arrowcolor="#60748A", standoff=6, ax=dx, ay=-dy,
+            font=dict(size=12, color="#172B43"),
+            bgcolor="rgba(239, 245, 251, 0.92)", borderpad=2,
+            captureevents=False,
+        )
 
 
 def risk_vs_return_panel(returns):
@@ -143,11 +203,25 @@ def risk_vs_return_panel(returns):
                 .index.tolist()
             )
             messages.append(
-                f"**{len(matching_industries)} of {len(summary)} plotted "
-                "industries meet both targets.**"
+                f"**{len(matching_industries)} of {len(summary)} "
+                f"{'industry meets' if len(summary) == 1 else 'industries meet'} "
+                "both targets.**"
+            )
+            period = frequency.lower()
+            messages.append(
+                f"The shaded area shows at least {target_return:g}% average "
+                f"{period} return and at most {target_volatility:g}% {period} volatility."
             )
             if matching_industries:
                 messages.append(", ".join(matching_industries))
+
+        elif target_return is not None:
+            messages.append(
+                f"The dashed line marks the {target_return:g}% average "
+                f"{frequency.lower()} return target. "
+                + ("The volatility target applies in Volatility mode."
+                   if risk_measure != "Volatility" else "")
+            )
 
         omitted = len(selected) - len(summary)
         if omitted:
@@ -170,8 +244,8 @@ def risk_vs_return_panel(returns):
             y_min = min(y_min, target_return)
             y_max = max(y_max, target_return)
 
-        x_padding = max((x_max - x_min) * 0.15, 0.01)
-        y_padding = max((y_max - y_min) * 0.15, 0.01)
+        x_padding = max((x_max - x_min) * 0.23, 0.01)
+        y_padding = max((y_max - y_min) * 0.23, 0.01)
         left = max(0, x_min - x_padding)
         right = x_max + x_padding
         bottom = y_min - y_padding
@@ -206,7 +280,7 @@ def risk_vs_return_panel(returns):
                 x1=target_volatility,
                 y0=target_return,
                 y1=top,
-                fillcolor="rgba(20, 123, 120, 0.09)",
+                fillcolor="rgba(20, 123, 120, 0.42)",
                 line_width=0,
                 layer="below",
             )
@@ -217,8 +291,6 @@ def risk_vs_return_panel(returns):
                 name="target-return",
                 line_dash="dash",
                 line_color="#AD642C",
-                annotation_text=f"Target return {target_return:g}%",
-                annotation_position="top right",
             )
 
         if show_volatility_target:
@@ -227,20 +299,20 @@ def risk_vs_return_panel(returns):
                 name="target-volatility",
                 line_dash="dash",
                 line_color="#315E9D",
-                annotation_text=f"Target volatility {target_volatility:g}%",
-                annotation_position="top right",
             )
+
+        add_industry_labels(fig, x, y, (left, right), (bottom, top))
 
         fig.update_layout(
             template="plotly_white",
-            paper_bgcolor="#FFFFFF",
+            paper_bgcolor="#30445C",
             plot_bgcolor="#D6E2EE",
-            font=dict(family="Inter, system-ui, sans-serif", color="#263B53"),
+            font=dict(family="Inter, system-ui, sans-serif", color="#F0F5FA"),
             hoverlabel=dict(bgcolor="#172B43", font_color="#FFFFFF"),
             hovermode="closest",
             showlegend=False,
-            margin=dict(l=65, r=35, t=40, b=65),
-            height=480,
+            margin=dict(l=65, r=24, t=20, b=60),
+            height=510,
         )
         fig.update_xaxes(
             title_text=risk_label,
@@ -315,7 +387,7 @@ def risk_vs_return_panel(returns):
                 multiselect=True,
                 label="Industries",
             )
-            with gr.Row():
+            with gr.Row(elem_classes=["risk-control-row"]):
                 start = gr.DateTime(
                     label="Start date", value=first_date,
                     include_time=False, type="string",
@@ -333,25 +405,20 @@ def risk_vs_return_panel(returns):
                     value="Volatility", label="Risk measure",
                 )
 
-            with gr.Row():
+            with gr.Row(elem_classes=["risk-control-row"]):
                 target_return = gr.Slider(
-                    **return_range, label="Minimum target return (%)",
+                    **return_range, label="Minimum return (%)",
                     value=default_return_target,
                 )
                 target_volatility = gr.Slider(
-                    **volatility_range, label="Maximum target volatility (%)",
+                    **volatility_range, label="Maximum volatility (%)",
                     value=default_volatility_target,
                 )
 
-            gr.Markdown(
-                "Targets use the selected frequency. "
-                "The volatility target applies in Volatility mode."
-            )
-
+        status = gr.Markdown(initial_status, elem_classes=["risk-result"])
         plot = gr.Plot(
             value=initial_plot, show_label=False, elem_classes=["risk-chart"],
         )
-        status = gr.Markdown(initial_status)
         table = gr.Dataframe(
             value=initial_table, interactive=False, label="Industry statistics",
         )
