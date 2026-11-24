@@ -318,37 +318,31 @@ def update_correlation_panel(
 def make_correlation_preview():
     """
     Clean, compact preview heatmap for the main 4-panel overview screen.
-    Matches the light background and minimal style of the other dashboard cards.
+    Designed to stay readable when resized to 210px height by python.py.
     """
+    preview_sectors = ALL_SECTORS[:8] if len(ALL_SECTORS) > 8 else ALL_SECTORS
     fig, _ = update_correlation_panel(
-        selected_sectors=ALL_SECTORS,
+        selected_sectors=preview_sectors,
         start_year=2000,
         end_year=MAX_YEAR,
         frequency="Monthly",
         corr_method="Pearson",
         abs_threshold=0.0,
-        show_values=True,
+        show_values=False,
         hide_insignificant=False,
         triangle_mode="Full Matrix",
     )
-    fig.update_traces(
-        showscale=False,
-        textfont=dict(size=10),
-    )
+    fig.update_traces(showscale=False)
     fig.update_layout(
-        title=dict(
-            text="<span style='font-size:12px;color:#475569;'>Monthly returns • Jan 2000 – Sep 2026</span>",
-            x=0.02,
-            y=0.97,
-        ),
+        title=None,
         template="plotly_white",
         plot_bgcolor="white",
         paper_bgcolor="white",
-        font=dict(color="#1e293b", size=11),
-        xaxis=dict(side="top", tickangle=-25, dtick=1),
+        font=dict(color="#17283E", size=10),
+        xaxis=dict(side="bottom", tickangle=-30, dtick=1),
         yaxis=dict(autorange="reversed", dtick=1),
-        margin=dict(l=115, r=15, t=65, b=10),
-        height=270,
+        margin=dict(l=85, r=15, t=15, b=55),
+        height=210,
     )
     return fig
 
