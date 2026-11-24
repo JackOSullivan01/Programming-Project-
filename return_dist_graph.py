@@ -589,35 +589,83 @@ def chart_explanation(chart_type):
 
 # Generate a simple fixed preview for the dashboard overview
 def make_distribution_preview():
-    selected = [name for name in [
-        "Technology", "Financials", "Healthcare", "Energy"
-    ] if name in df.columns]
+    selected = [
+        sector
+        for sector in [
+            "Technology",
+            "Financials",
+            "Healthcare",
+            "Energy"
+        ]
+        if sector in df.columns
+    ]
+
     if not selected:
         selected = list(df.columns[:4])
 
-    monthly = (1 + df[selected]).resample("ME").prod(min_count=1) - 1
+    # Compound daily decimal returns into monthly returns
+    monthly = (
+        (1 + df[selected])
+        .resample("ME")
+        .prod(min_count=1)
+        - 1
+    )
+
+    # Exclude months containing missing daily returns
     missing = df[selected].isna().resample("ME").sum()
     monthly = monthly.mask(missing > 0).dropna() * 100
 
-    fig, ax = plt.subplots(figsize=(10, 5.5), layout="constrained")
-    plotted = False
-    for selected_sector in selected:
-        values = monthly[selected_sector].dropna()
-        if len(values) >= 3 and values.nunique() > 1:
-            sns.kdeplot(
-                x=values, color=PALETTE.get(selected_sector, "#17283E"),
-                linewidth=2, cut=0, label=selected_sector, ax=ax
-            )
-            plotted = True
-    if not plotted:
-        ax.text(0.5, 0.5, "Not enough monthly data for a preview.",
-                transform=ax.transAxes, ha="center")
+    # Arrange the returns for Seaborn
+    plot_data = monthly.melt(
+        var_name="Sector",
+        value_name="Return (%)"
+    )
+
+    fig, ax = plt.subplots(
+        figsize=(11, 5.2),
+        dpi=150,
+        layout="constrained"
+    )
+
+    if len(monthly) < 3 or (monthly.nunique() < 2).any():
+        ax.text(
+            0.5,
+            0.5,
+            "Not enough monthly data for a violin preview.",
+            transform=ax.transAxes,
+            ha="center"
+        )
+        ax.set_axis_off()
+
     else:
-        ax.legend(frameon=False)
-    ax.set_xlabel("Monthly return (%)")
-    ax.set_ylabel("Density")
+        sns.violinplot(
+            data=plot_data,
+            x="Return (%)",
+            y="Sector",
+            order=selected,
+            hue="Sector",
+            palette=PALETTE,
+            dodge=False,
+            legend=False,
+            inner="quart",
+            cut=0,
+            linewidth=1,
+            ax=ax
+        )
+
+        # Mark zero return without adding downside overlays
+        ax.axvline(
+            0,
+            color="#94A3B8",
+            linewidth=0.8
+        )
+
+        ax.set_xlabel("Monthly return (%)")
+        ax.set_ylabel("")
+
     style_figure(fig)
     plt.close(fig)
+
     return fig
 
 
