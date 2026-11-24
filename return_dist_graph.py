@@ -624,7 +624,7 @@ with gr.Blocks(title="Return distributions") as demo:
     with gr.Row():
         sector_input = gr.Dropdown(
             choices=list(df.columns),
-            value=[df.columns[0]],
+            value=["Technology", "Financials", "Healthcare", "Energy"],
             multiselect=True,
             label="Sectors",
             scale=3,
