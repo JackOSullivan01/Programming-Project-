@@ -44,73 +44,53 @@ PROJECT_FOLDER = Path(__file__).resolve().parent
 
 
 def make_title_banner():
-    # Render the header in Python for exact centring without CSS or HTML.
-    width, height = 2200, 280
+    # A slim, centred title with no secondary sentence or decorative underline.
+    width, height = 2200, 115
     image = Image.new("RGB", (width, height), "#17283E")
     draw = ImageDraw.Draw(image)
     bold_path = font_manager.findfont(
         font_manager.FontProperties(family="DejaVu Sans", weight="bold")
     )
-    regular_path = font_manager.findfont(
-        font_manager.FontProperties(family="DejaVu Sans")
-    )
-    title_font = ImageFont.truetype(bold_path, 90)
-    subtitle_font = ImageFont.truetype(regular_path, 30)
     draw.text(
-        (width / 2, 106), "Industry Performance Explorer",
-        font=title_font, fill="#FFFFFF", anchor="mm"
-    )
-    draw.text(
-        (width / 2, 184),
-        "Four perspectives on industry performance. Choose an analysis to explore.",
-        font=subtitle_font, fill="#CBD9E8", anchor="mm"
-    )
-    draw.rounded_rectangle(
-        (width / 2 - 65, 235, width / 2 + 65, 241),
-        radius=3, fill="#35B7AC"
+        (width / 2, height / 2), "Industry Performance Explorer",
+        font=ImageFont.truetype(bold_path, 54),
+        fill="#FFFFFF", anchor="mm"
     )
     return image
 
 
-PREVIEW_HEIGHT = 300
-CARD_HEADER_HEIGHT = 82
+PREVIEW_HEIGHT = 210
 
 
 def make_card_header(title, description):
-    # Equal-sized, high-contrast title strips rendered entirely in Python.
-    width, height = 1200, 150
-    image = Image.new("RGB", (width, height), "#17283E")
+    # Quiet, identical white title strips keep attention on the charts.
+    width, height = 1200, 68
+    image = Image.new("RGB", (width, height), "#FFFFFF")
     draw = ImageDraw.Draw(image)
     bold = font_manager.findfont(
         font_manager.FontProperties(family="DejaVu Sans", weight="bold")
     )
-    regular = font_manager.findfont(
-        font_manager.FontProperties(family="DejaVu Sans")
-    )
-    draw.rectangle((0, 0, 7, height), fill="#19A99D")
-    draw.text((35, 50), title, font=ImageFont.truetype(bold, 46),
-              fill="white", anchor="lm")
-    draw.text((35, 110), description,
-              font=ImageFont.truetype(regular, 25),
-              fill="#CBD9E8", anchor="lm")
+    draw.text((26, height / 2), title,
+              font=ImageFont.truetype(bold, 34),
+              fill="#17283E", anchor="lm")
     return image
 
 
 def unavailable_preview(text):
     # A clearly labelled empty frame, never an invented chart.
-    image = Image.new("RGB", (1000, 440), "white")
+    image = Image.new("RGB", (1000, 350), "white")
     draw = ImageDraw.Draw(image)
     font = font_manager.findfont(
         font_manager.FontProperties(family="DejaVu Sans")
     )
-    draw.text((500, 220), text, font=ImageFont.truetype(font, 25),
+    draw.text((500, 175), text, font=ImageFont.truetype(font, 25),
               fill="#637084", anchor="mm")
     return image
 
 
 def prepare_preview(figure):
     if hasattr(figure, "set_size_inches"):
-        figure.set_size_inches(10, 4.4)
+        figure.set_size_inches(10, 4)
         figure.set_dpi(150)
         figure.set_facecolor("white")
         # Use an Image with an actual fixed height for Matplotlib previews.
@@ -193,7 +173,7 @@ def build_dashboard():
                                     label=connection["title"],
                                     alt_text=f"{connection['title']}. {connection['description']}",
                                     show_label=False, container=False, interactive=False,
-                                    buttons=[], height=CARD_HEADER_HEIGHT,
+                                    buttons=[],
                                     width="100%", format="png"
                                 )
                                 preview_fn = (
@@ -226,7 +206,7 @@ def build_dashboard():
                                 with gr.Row():
                                     gr.Markdown("", scale=1, min_width=0)
                                     explore_buttons.append(gr.Button(
-                                        "Explore analysis →", variant="primary", size="md",
+                                        "Explore analysis →", variant="secondary", size="sm",
                                         scale=0, min_width=175,
                                         interactive=(module is not None)
                                     ))
@@ -284,13 +264,32 @@ def make_dashboard_theme():
         background_fill_primary_dark="#FFFFFF",
         background_fill_secondary="#FFFFFF",
         background_fill_secondary_dark="#FFFFFF",
+        panel_background_fill="#FFFFFF",
+        panel_background_fill_dark="#FFFFFF",
+        panel_border_width="1px",
+        panel_border_width_dark="1px",
+        panel_border_color="#E4E9F0",
+        panel_border_color_dark="#E4E9F0",
+        button_secondary_background_fill="#F5F7FA",
+        button_secondary_background_fill_dark="#F5F7FA",
+        button_secondary_text_color="#334155",
+        button_secondary_text_color_dark="#334155",
+        button_secondary_border_color="#DCE3EC",
+        button_secondary_border_color_dark="#DCE3EC",
+        button_secondary_background_fill_hover="#E8F3F2",
+        button_secondary_background_fill_hover_dark="#E8F3F2",
+        button_secondary_text_color_hover="#087F83",
+        button_secondary_text_color_hover_dark="#087F83",
         block_background_fill="#FFFFFF",
+        block_label_background_fill="#FFFFFF",
+        block_label_background_fill_dark="#FFFFFF",
         block_background_fill_dark="#FFFFFF",
         block_border_width="0px",
         block_shadow="none",
-        block_padding="10px",
-        layout_gap="10px",
-        button_medium_padding="10px 18px",
+        block_padding="6px",
+        layout_gap="12px",
+        button_medium_padding="8px 16px",
+        button_small_padding="8px 16px",
         body_text_color="#17283E",
         body_text_color_dark="#17283E",
         body_text_color_subdued="#526174",
@@ -309,3 +308,4 @@ def make_dashboard_theme():
 if __name__ == "__main__":
     demo = build_dashboard()
     demo.launch(inbrowser=True, theme=make_dashboard_theme())
+
