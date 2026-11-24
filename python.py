@@ -28,7 +28,7 @@ PANELS = [
     {
         "title": "Industry correlations",
         "description": "Explore how closely sectors move together.",
-        "module": "correlation_heatmap1",
+        "module": "correlation_graph",
         "preview": "make_correlation_preview",
         "builder": "build_correlation_panel"
     },
