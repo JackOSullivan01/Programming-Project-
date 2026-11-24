@@ -101,15 +101,15 @@ def build_panel(csv_path):
         if industry in industry_order
     ] or industries[:3]
 
-    def draw(selected, start_year, end_year, starting_amount, contribution):
+    def draw(selected, start_year, end_year, starting_amount, contribution, goal):
         if not selected:
             raise gr.Error("Choose at least one industry.")
-        if None in (start_year, end_year, starting_amount, contribution):
-            raise gr.Error("Enter both years and both dollar amounts.")
+        if None in (start_year, end_year, starting_amount, contribution, goal):
+            raise gr.Error("Enter both years, both dollar amounts, and an investment goal.")
         if start_year > end_year:
             raise gr.Error("Start year must be at or before end year.")
-        if starting_amount < 0 or contribution < 0:
-            raise gr.Error("Dollar amounts must be zero or greater.")
+        if starting_amount < 0 or contribution < 0 or goal < 0:
+            raise gr.Error("Dollar amounts and the investment goal must be zero or greater.")
 
         returns = monthly.loc[str(int(start_year)):str(int(end_year)), selected]
         if returns.empty or returns.isna().any().any():
@@ -119,10 +119,16 @@ def build_panel(csv_path):
         dates = returns.index.insert(0, returns.index[0] - pd.offsets.MonthEnd(1))
         fig = go.Figure()
         ending_values = []
+        industry_values = []
 
         for industry in selected:
             balances = investment_growth(returns[industry], starting_amount, contribution)
             ending_values.append(balances[-1])
+            first_reached = next(
+                (date.strftime("%b %Y") for date, balance in zip(dates, balances) if balance >= goal),
+                "Not reached",
+            )
+            industry_values.append((industry, balances[-1], first_reached))
             index = industry_order[industry]
             color = LINE_COLORS[index % len(LINE_COLORS)]
             dash = LINE_DASHES[(index // len(LINE_COLORS)) % len(LINE_DASHES)]
@@ -135,6 +141,24 @@ def build_panel(csv_path):
                 marker=dict(color=color, size=[0] * len(returns) + [7]),
                 hovertemplate="$%{y:,.2f}",
             )
+
+        total_invested = starting_amount + contribution * len(returns)
+        fig.add_scatter(
+            x=dates,
+            y=[starting_amount + contribution * month for month in range(len(returns) + 1)],
+            name="Money paid in",
+            mode="lines",
+            line=dict(color="#64748B", width=2, dash="dash"),
+            hovertemplate="$%{y:,.2f}<extra>Money paid in</extra>",
+        )
+        fig.add_scatter(
+            x=dates,
+            y=[goal] * len(dates),
+            name=f"Investment goal (${goal:,.2f})",
+            mode="lines",
+            line=dict(color="#B45309", width=2, dash="dot"),
+            hovertemplate="$%{y:,.2f}<extra>Investment goal</extra>",
+        )
 
         fig.update_layout(
             template="plotly_white",
@@ -180,17 +204,34 @@ def build_panel(csv_path):
             separators=".,",
         )
 
-        lowest, highest = min(ending_values), max(ending_values)
-        ending_value = f"${lowest:,.2f}"
-        if f"{lowest:.2f}" != f"{highest:.2f}":
-            ending_value += f"–${highest:,.2f}"
-        total_invested = starting_amount + contribution * len(returns)
+        def format_money(value):
+            return f"-${abs(value):,.2f}" if value < 0 else f"${value:,.2f}"
+
+        def format_range(values):
+            lowest, highest = min(values), max(values)
+            if f"{lowest:.2f}" == f"{highest:.2f}":
+                return format_money(lowest)
+            return f"{format_money(lowest)}–{format_money(highest)}"
+
+        gains = [ending_value - total_invested for ending_value in ending_values]
         summary = (
-            f"**Ending portfolio value · {ending_value}**\n\n"
-            f"${total_invested:,.2f} invested per industry · "
-            f"{returns.index[0]:%b %Y} to {returns.index[-1]:%b %Y}\n"
+            f"**Paid in per industry: {format_money(total_invested)} · "
+            f"Ending value: {format_range(ending_values)} · "
+            f"Gain/loss: {format_range(gains)}**\n\n"
+            f"{returns.index[0]:%b %Y} to {returns.index[-1]:%b %Y}"
         )
-        return summary, fig
+        comparison = [
+            [
+                industry,
+                format_money(ending_value),
+                format_money(ending_value - total_invested),
+                first_reached,
+            ]
+            for industry, ending_value, first_reached in sorted(
+                industry_values, key=lambda result: result[1], reverse=True
+            )
+        ]
+        return summary, fig, comparison
 
     gr.HTML(PANEL_STYLE, container=False)
     gr.Markdown(
@@ -238,9 +279,17 @@ def build_panel(csv_path):
                 label="Monthly contribution ($)",
                 info="Added at the end of each month.",
             )
+            goal = gr.Number(
+                value=50000,
+                minimum=0,
+                step=1000,
+                label="Investment goal ($)",
+            )
 
-        controls = [selected, start_year, end_year, starting_amount, contribution]
-        initial_summary, initial_figure = draw(*(control.value for control in controls))
+        controls = [selected, start_year, end_year, starting_amount, contribution, goal]
+        initial_summary, initial_figure, initial_comparison = draw(
+            *(control.value for control in controls)
+        )
         with gr.Column(scale=4, min_width=300):
             summary = gr.Markdown(initial_summary, elem_id="investment-growth-summary")
             chart = gr.Plot(
@@ -248,6 +297,13 @@ def build_panel(csv_path):
                 show_label=False,
                 container=False,
                 elem_id="investment-growth-chart",
+            )
+            comparison_table = gr.Dataframe(
+                value=initial_comparison,
+                headers=["Industry", "Ending value", "Gain/loss", "First reached goal"],
+                datatype=["str", "str", "str", "str"],
+                interactive=False,
+                label="Industry comparison",
             )
 
     # Forward clicks on the dropdown arrow to the underlying input.
@@ -282,7 +338,7 @@ def build_panel(csv_path):
         triggers=[control.change for control in controls],
         fn=draw,
         inputs=controls,
-        outputs=[summary, chart],
+        outputs=[summary, chart, comparison_table],
     )
 
 def make_growth_preview():
