@@ -84,12 +84,26 @@ def investment_growth(monthly_returns, starting_amount, monthly_contribution):
 
 
 def build_panel(csv_path):
-    daily = pd.read_csv(csv_path, parse_dates=["Date"]).set_index("Date").sort_index()
+    daily = pd.read_csv(csv_path)
+    if "Date" not in daily.columns:
+        raise ValueError("The investment data must contain a Date column.")
+
+    daily["Date"] = pd.to_datetime(daily["Date"], errors="coerce")
+    daily = daily.set_index("Date").sort_index()
+    if daily.empty:
+        raise ValueError("The investment data contains no rows.")
+    if daily.index.isna().any():
+        raise ValueError("Industry data contains invalid dates.")
+    if not all(pd.api.types.is_numeric_dtype(dtype) for dtype in daily.dtypes):
+        raise ValueError("Industry return columns must contain numeric values.")
+
     industries = daily.columns.tolist()
     industry_order = {industry: index for index, industry in enumerate(industries)}
 
     # Compound daily returns into calendar-month returns.
     monthly = (1 + daily).resample("ME").prod(min_count=1) - 1
+    if monthly.empty:
+        raise ValueError("The investment data contains no monthly return periods.")
     first_month, last_month = monthly.index[[0, -1]]
     start_default = max(first_month, pd.Timestamp("2010-01-31"))
     end_default = min(last_month, pd.Timestamp("2025-12-31"))
