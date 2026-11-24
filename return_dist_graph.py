@@ -564,6 +564,19 @@ def draw_histogram(
     # Return the graph and clear any previous message
     return fig, ""
 
+# Show only the controls used by the selected graph
+def update_controls(chart_type):
+    histogram = chart_type == "Histogram"
+    qq_graph = chart_type == "Normal Q-Q"
+
+    return (
+        gr.update(visible=histogram),  # Histogram bins
+        gr.update(visible=histogram),  # Density curve
+        gr.update(visible=histogram),  # Normal reference
+        gr.update(visible=not qq_graph),  # Loss threshold
+        gr.update(visible=not qq_graph),  # Downside tail
+        gr.update(visible=not qq_graph)   # Tail confidence
+    )
 
 # Create the webpage
 with gr.Blocks(title="Return distributions") as demo:
@@ -686,6 +699,32 @@ with gr.Blocks(title="Return distributions") as demo:
     ]
 
     outputs = [graph, message]
+
+      # Controls whose visibility depends on the graph selected
+    settings_controls = [
+        bins_input,
+        curve_input,
+        normal_input,
+        loss_input,
+        tail_input,
+        confidence_input
+    ]
+
+    # Set the correct controls when the page opens
+    demo.load(
+        fn=update_controls,
+        inputs=chart_input,
+        outputs=settings_controls,
+        queue=False
+    )
+
+    # Adjust the controls automatically when the graph changes
+    chart_input.change(
+        fn=update_controls,
+        inputs=chart_input,
+        outputs=settings_controls,
+        queue=False
+    )
 
     # Draw the initial graph when the page opens
     demo.load(
