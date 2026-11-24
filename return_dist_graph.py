@@ -93,9 +93,8 @@ def add_graph_details(fig, returns, frequency):
         )
 
     fig.suptitle(
-        f"{frequency} returns  |  {first_date} – {last_date}"
-        f"\n{observation_text}",
-        fontsize=10,
+        f"{frequency} returns  ·  {first_date} – {last_date}  ·  {observation_text}",
+        fontsize=8,
         color="#526174"
     )
 
@@ -103,7 +102,8 @@ def add_graph_details(fig, returns, frequency):
 # Gradio runs this function whenever an input changes
 def draw_histogram(
         sector, start_date, end_date, bins, frequency, loss_threshold,
-        show_curve, show_normal, show_tail, confidence, chart_type
+        show_curve, show_normal, show_tail, confidence, chart_type,
+        view_range="Central 98%", show_loss=False
 ):
 
     if not sector:
@@ -199,7 +199,8 @@ def draw_histogram(
         fig, axes = plt.subplots(
             rows,
             columns,
-            figsize=(10, 3 * rows),
+            figsize=(11.5, 2.2 * rows + 0.6),
+            dpi=180,
             sharex=True,
             sharey=True,
             squeeze=False,
@@ -258,7 +259,8 @@ def draw_histogram(
     if chart_type == "Cumulative probability":
 
         fig, ax = plt.subplots(
-            figsize=(10, 4.5),
+            figsize=(11.5, 4),
+            dpi=180,
             layout="constrained"
         )
 
@@ -286,13 +288,14 @@ def draw_histogram(
             )
 
         #Mark the user's chosen loss threshold
-        ax.axvline(
-            loss_threshold,
-            color="#B84A42",
-            linestyle="--",
-            linewidth=1.5,
-            label=f"Loss threshold: {loss_threshold}%"
-        )
+        if show_loss:
+            ax.axvline(
+                loss_threshold,
+                color="#B84A42",
+                linestyle="--",
+                linewidth=1.5,
+                label=f"Loss threshold: {loss_threshold}%"
+            )
 
         #Show the selected lower-tail probability
         if show_tail:
@@ -311,7 +314,7 @@ def draw_histogram(
         ax.yaxis.set_major_formatter(PercentFormatter(1))
 
         ax.set_title(
-            f"{frequency} cumulative return probabilities",
+            "Cumulative probability",
             loc="left",
             fontweight="bold"
         )
@@ -343,7 +346,8 @@ def draw_histogram(
 
         #Give each sector a separate row for clear comparisons
         fig, ax = plt.subplots(
-            figsize=(10, max(4, len(sector) * 0.6)),
+            figsize=(11.5, max(3.4, len(sector) * 0.43 + 0.8)),
+            dpi=180,
             layout="constrained"
         )
 
@@ -392,13 +396,14 @@ def draw_histogram(
         )
 
         #Mark the user's chosen loss threshold
-        ax.axvline(
-            loss_threshold,
-            color="#B84A42",
-            linestyle="--",
-            linewidth=1.5,
-            label=f"Loss threshold: {loss_threshold}%"
-        )
+        if show_loss:
+            ax.axvline(
+                loss_threshold,
+                color="#B84A42",
+                linestyle="--",
+                linewidth=1.5,
+                label=f"Loss threshold: {loss_threshold}%"
+            )
 
         #Show the lower percentile and tail mean for each sector
         if show_tail:
@@ -443,7 +448,7 @@ def draw_histogram(
 
         #Label and display the selected graph
         ax.set_title(
-            f"{frequency} return distributions",
+            chart_type,
             loc="left",
             fontweight="bold"
         )
@@ -459,354 +464,421 @@ def draw_histogram(
         return fig, ""
 
     all_values = sector_returns.to_numpy().flatten()
+    central = view_range == "Central 98%"
+    low, high = np.quantile(all_values, [0.01, 0.99])
+    if not central or low == high:
+        low, high = all_values.min(), all_values.max()
+    if low == high:
+        low, high = low - 0.5, high + 0.5
 
-    edges = np.histogram_bin_edges(
-        all_values,
-        bins=int(bins)
-    )
+    # Expand the central window when needed to include the chosen loss line.
+    if central and show_loss:
+        padding = max((high - low) * 0.025, 0.05)
+        low = min(low, loss_threshold - padding)
+        high = max(high, loss_threshold + padding)
+
+    # Fine common bins within the displayed range, retaining extreme values
+    # in outer bins so density remains normalised over the full sample.
+    edges = np.linspace(low, high, int(bins) + 1)
+    if all_values.min() < low:
+        edges = np.r_[all_values.min(), edges]
+    if all_values.max() > high:
+        edges = np.r_[edges, all_values.max()]
 
     number_of_sectors = len(sector)
     columns = 1 if number_of_sectors == 1 else 2
     rows = (number_of_sectors + columns - 1) // columns
 
-    #Creates the histogram
+    # A wide, compact figure keeps four panels readable together
     fig, axes = plt.subplots(
-        rows,
-        columns,
-        figsize=(8, 3 * rows),
-        sharex=True,
-        sharey=True,
-        squeeze=False,
-        layout="constrained"
+        rows, columns, figsize=(11.5, 2.2 * rows + 0.6), dpi=180,
+        sharex=True, sharey=True, squeeze=False, layout="constrained"
     )
-
+    outside_messages = []
     for i, selected_sector in enumerate(sector):
         ax = axes.flat[i]
-
+        values = sector_returns[selected_sector].dropna()
         ax.hist(
-            sector_returns[selected_sector],
-            bins=edges,
-            density=True,
-            color=PALETTE[selected_sector],
-            edgecolor="white"
+            values, bins=edges, density=True,
+            color=PALETTE[selected_sector], edgecolor="white", linewidth=0.45
         )
 
-        values = sector_returns[selected_sector].dropna()
-
-        #Draw the curve if selected and enough different values exist
+        # Estimate density from the full sample, even in the central view
         if show_curve and len(values) >= 3 and values.nunique() > 1:
-            sns.kdeplot(
-                x=values,
-                color="#17345C",
-                linewidth=2,
-                cut=0,
-                label="Density curve",
-                ax=ax
+            x_values = np.linspace(low, high, 500)
+            ax.plot(
+                x_values, stats.gaussian_kde(values)(x_values),
+                color="#17345C", linewidth=1.7, label="Density curve"
             )
-
-         #Calculate the sector's average return and standard deviation
-        mean_return = values.mean()
-        standard_deviation = values.std()
-
-        #Draw a normal reference with the same mean and standard deviation
-        if show_normal and len(values) >= 3 and standard_deviation > 0:
-
-            #Create evenly spaced return values across the histogram
-            x_values = np.linspace(edges[0], edges[-1], 300)
-
-            # Calculate the normal probability density at each return value
-            normal_density = stats.norm.pdf(
-                x_values,
-                loc=mean_return,
-                scale=standard_deviation
-            )
-
-            #Use a dashed line to distinguish it from the density curve
+        if show_normal and len(values) >= 3 and values.std() > 0:
+            x_values = np.linspace(low, high, 500)
             ax.plot(
                 x_values,
-                normal_density,
-                color="#637084",
-                linestyle="--",
-                linewidth=1.8,
+                stats.norm.pdf(x_values, loc=values.mean(), scale=values.std()),
+                color="#637084", linestyle="--", linewidth=1.4,
                 label="Normal reference"
             )
 
-        #Calculate the lower-tail probability from the confidence level
-        tail_probability = 1 - confidence / 100
-
+        # Tail calculations always use every selected observation
         if show_tail:
-            #Find the return below which the selected proportion falls
-            tail_cutoff = values.quantile(tail_probability)
-
-            #Calculate the average return in that lower tail
+            tail_cutoff = values.quantile(1 - confidence / 100)
             tail_mean = values[values <= tail_cutoff].mean()
-
-            #Shade the lower-tail region
-            ax.axvspan(
-                edges[0],
-                tail_cutoff,
-                color="#B84A42",
-                alpha=0.12
-            )
-
-            #Mark the estimated lower-tail percentile
+            if tail_cutoff > low:
+                ax.axvspan(low, min(high, tail_cutoff), color="#B84A42", alpha=0.10)
             ax.axvline(
-                tail_cutoff,
-                color="#B84A42",
-                linestyle=":",
-                linewidth=1.8,
+                tail_cutoff, color="#B84A42", linestyle=":", linewidth=1.5,
                 label=f"Lower {100 - confidence:g}% cutoff"
             )
-
-            #Display the cutoff and average tail return inside the graph
             ax.text(
-                0.97,
-                0.95,
-                f"Cutoff: {tail_cutoff:.2f}%\n"
-                f"Tail mean: {tail_mean:.2f}%",
-                transform=ax.transAxes,
-                ha="right",
-                va="top",
-                fontsize=8,
+                0.98, 0.96,
+                f"Cutoff {tail_cutoff:.2f}%\nTail mean {tail_mean:.2f}%",
+                transform=ax.transAxes, ha="right", va="top", fontsize=7,
                 color="#B84A42",
-                bbox={
-                    "facecolor": "white",
-                    "edgecolor": "none",
-                    "alpha": 0.85
-                }
-            )    
+                bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.85}
+            )
+        if show_loss:
+            ax.axvline(
+                loss_threshold, color="#DC2626", linestyle="--", linewidth=1.2,
+                label=f"Loss threshold {loss_threshold:g}%"
+            )
 
-        #Mark the user's chosen loss threshold
-        ax.axvline(
-            loss_threshold,
-            color="#DC2626",
-            linestyle="--",
-            linewidth=1.5,
-            label=f"Loss threshold: {loss_threshold}%"
-        )
+        ax.set_xlim(low, high)
+        ax.set_title(selected_sector, loc="left", fontsize=10)
+        ax.tick_params(labelbottom=True)
+        if i // columns == rows - 1:
+            ax.set_xlabel(f"{frequency} return (%)", fontsize=8)
+        if i % columns == 0:
+            ax.set_ylabel("Density", fontsize=8)
 
-        ax.legend(frameon=False)
-
-        ax.set_title(f"{selected_sector}: {frequency.lower()} returns")
-        ax.set_xlabel(f"{frequency} return (%)")
-        ax.set_ylabel("Density")
+        if central:
+            outside = int(((values < low) | (values > high)).sum())
+            outside_messages.append(
+                f"{selected_sector}: {outside:,} ({outside / len(values):.1%})"
+            )
 
     for i in range(number_of_sectors, rows * columns):
         axes.flat[i].set_visible(False)
 
+    # One shared legend replaces the repeated panel legends
+    handles, labels = axes.flat[0].get_legend_handles_labels()
+    if handles:
+        fig.legend(
+            handles, labels, loc="outside lower center",
+            ncol=min(4, len(handles)), frameon=False, fontsize=8
+        )
     style_figure(fig)
     add_graph_details(fig, sector_returns, frequency)
     plt.close(fig)
 
-    # Return the graph and clear any previous message
-    return fig, ""
+    message = ""
+    if central:
+        message = (
+            f"**Central 98% view:** shared limits {low:.2f}% to {high:.2f}% "
+            "start from the pooled first and 99th percentiles and expand if needed "
+            "to include the selected loss line. Observations outside "
+            "the view: " + "; ".join(outside_messages) +
+            ". No observations are removed from density or tail calculations. "
+            "Choose Full range to see the extremes."
+        )
+    return fig, message
 
-# Show only the controls used by the selected graph
+# Explain the selected analysis without changing the graph calculations
+def chart_explanation(chart_type):
+    explanations = {
+        "Histogram": "The full histogram has total area 1; a central-range view shows only part of that area. The smooth curve estimates the return distribution. The optional normal reference uses the sample mean and standard deviation.",
+        "Box plot": "The box contains the middle 50% of returns and its centre line is the median. Whiskers extend to observations within 1.5 interquartile ranges; more distant observations appear separately.",
+        "Violin plot": "Wider sections indicate more concentrated returns. Internal lines show the quartiles.",
+        "Cumulative probability": "The curve gives the proportion of historical observations at or below each return.",
+        "Normal Q-Q": "Observed returns are compared with theoretical normal quantiles. Departures from the reference line indicate differences from a normal distribution."
+    }
+    return explanations[chart_type]
+
+
+# Generate a simple fixed preview for the dashboard overview
+def make_distribution_preview():
+    selected = [name for name in [
+        "Technology", "Financials", "Healthcare", "Energy"
+    ] if name in df.columns]
+    if not selected:
+        selected = list(df.columns[:4])
+
+    monthly = (1 + df[selected]).resample("ME").prod(min_count=1) - 1
+    missing = df[selected].isna().resample("ME").sum()
+    monthly = monthly.mask(missing > 0).dropna() * 100
+
+    fig, ax = plt.subplots(figsize=(10, 5.5), layout="constrained")
+    plotted = False
+    for selected_sector in selected:
+        values = monthly[selected_sector].dropna()
+        if len(values) >= 3 and values.nunique() > 1:
+            sns.kdeplot(
+                x=values, color=PALETTE.get(selected_sector, "#17283E"),
+                linewidth=2, cut=0, label=selected_sector, ax=ax
+            )
+            plotted = True
+    if not plotted:
+        ax.text(0.5, 0.5, "Not enough monthly data for a preview.",
+                transform=ax.transAxes, ha="center")
+    else:
+        ax.legend(frameon=False)
+    ax.set_xlabel("Monthly return (%)")
+    ax.set_ylabel("Density")
+    style_figure(fig)
+    plt.close(fig)
+    return fig
+
+
+# Chart-specific reading notes avoid histogram instructions on other views
+def reading_notes(chart_type):
+    notes = {
+        "Histogram": "**Compare shape and spread.** Common axes and bin edges make the sector panels comparable. Density is not the probability of a single return.",
+        "Box plot": "**Compare medians, spread and outliers.** Wider boxes mean a larger middle-50% range. Diamond markers identify tail cutoffs; crosses identify tail means when enabled.",
+        "Violin plot": "**Compare concentration and asymmetry.** All sectors share a return axis. Wider sections indicate more concentrated returns; internal lines mark quartiles. Optional diamonds and crosses show tail cutoffs and means.",
+        "Cumulative probability": "**Read probability vertically.** At any return, a higher curve means a larger fraction of observations at or below that value. The optional horizontal guide marks the selected lower-tail probability.",
+        "Normal Q-Q": "**Look for departures from the line.** Systematic curves or large tail deviations suggest returns differ from the fitted normal reference. The horizontal axis contains normal quantiles, not return percentages."
+    }
+    return notes[chart_type]
+
+
 def update_controls(chart_type):
     histogram = chart_type == "Histogram"
-    qq_graph = chart_type == "Normal Q-Q"
-
     return (
-        gr.update(visible=histogram),  # Histogram bins
-        gr.update(visible=histogram),  # Density curve
-        gr.update(visible=histogram),  # Normal reference
-        gr.update(visible=not qq_graph),  # Loss threshold
-        gr.update(visible=not qq_graph),  # Downside tail
-        gr.update(visible=not qq_graph)   # Tail confidence
+        gr.update(visible=histogram),
+        gr.update(visible=chart_type != "Normal Q-Q"),
+        chart_explanation(chart_type),
+        gr.update(visible=histogram),
+        reading_notes(chart_type),
+        f"### {chart_type}"
     )
 
-# Create the webpage
-with gr.Blocks(title="Return distributions") as demo:
 
-    gr.Markdown("## Return distributions")
+# Separate validation messages from histogram-only range information
+def render_distribution(*inputs):
+    if inputs[12] and inputs[5] is None:
+        return None, "Enter a loss threshold, or turn its reference line off.", ""
+    fig, text = draw_histogram(*inputs)
+    if fig is None:
+        return None, text, ""
+    return fig, "", text
 
-    #Keep sector selection, frequency and chart choice together
-    with gr.Row():
-        sector_input = gr.Dropdown(
-            choices=list(df.columns),
-            value=["Technology", "Financials", "Healthcare", "Energy"],
-            multiselect=True,
-            label="Sectors",
-            scale=3,
-            min_width=180
-        )
 
-        frequency_input = gr.Dropdown(
-            choices=["Daily", "Monthly"],
-            value="Daily",
-            label="Frequency",
-            scale=1,
-            min_width=100
-        )
-
-        chart_input = gr.Dropdown(
-            choices=[
-                "Histogram",
-                "Box plot",
-                "Violin plot",
-                "Cumulative probability",
-                "Normal Q-Q"
-            ],
-            value="Histogram",
-            label="Analysis",
-            scale=2,
-            min_width=160
-        )
-
-    #Keep the dates and loss threshold in a second compact row
-    with gr.Row():
-        start_input = gr.Textbox(
-            value=df.index.min().strftime("%Y-%m-%d"),
-            label="From · YYYY-MM-DD",
-            min_width=120
-        )
-
-        end_input = gr.Textbox(
-            value=df.index.max().strftime("%Y-%m-%d"),
-            label="To · YYYY-MM-DD",
-            min_width=120
-        )
-
-        loss_input = gr.Number(
-            value=-5,
-            minimum=-30,
-            maximum=0,
-            step=0.5,
-            label="Loss threshold (%)",
-            min_width=100
-        )
-
-    #Hide the additional options until the user needs them
-    with gr.Accordion("Analysis settings", open=False):
-
-        with gr.Row():
-            curve_input = gr.Checkbox(
-                value=True,
-                label="Density curve · histogram"
-            )
-
-            normal_input = gr.Checkbox(
-                value=False,
-                label="Normal reference · histogram"
-            )
-
-            tail_input = gr.Checkbox(
-                value=True,
-                label="Downside tail"
-            )
-
-        with gr.Row():
-            bins_input = gr.Slider(
-                minimum=10,
-                maximum=100,
-                value=30,
-                step=5,
-                label="Histogram bins"
-            )
-
-            confidence_input = gr.Slider(
-                minimum=90,
-                maximum=99,
-                value=95,
-                step=1,
-                label="Tail confidence (%)"
-            )
-
-    #Display the graph without an extra component heading
-    graph = gr.Plot(
-        show_label=False,
-        container=False
+def selection_summary(sectors, frequency, start_date, end_date):
+    return (
+        f"**{len(sectors or [])} sectors** · **{frequency} returns**  \n"
+        f"{start_date} — {end_date}"
     )
 
-    message = gr.Markdown()
+
+# Build this panel inside the parent dashboard's Blocks app
+# Pass that app as the app argument so initial events belong to it
+def build_distribution_panel(app):
+    defaults = [name for name in [
+        "Technology", "Financials", "Healthcare", "Energy"
+    ] if name in df.columns]
+    if not defaults:
+        defaults = list(df.columns[:4])
+
+    # A restrained editorial heading, rather than competing slogans
+    with gr.Row(equal_height=False):
+        with gr.Column(scale=3, min_width=0):
+            gr.Markdown("# Return distributions")
+            gr.Markdown("**A clearer view of sector returns, from typical outcomes to tail risk.**")
+        with gr.Column(scale=1, min_width=220):
+            active_selection = gr.Markdown(selection_summary(
+                defaults, "Monthly", df.index.min().strftime("%Y-%m-%d"),
+                df.index.max().strftime("%Y-%m-%d")
+            ))
+
+    with gr.Row(equal_height=False):
+        # PANEL 1: a compact settings sidebar
+        with gr.Column(scale=1, min_width=270):
+            with gr.Group():
+                gr.Markdown("### Configure analysis")
+                with gr.Tabs():
+                    with gr.Tab("Data"):
+                        chart_input = gr.Dropdown(
+                            choices=["Histogram", "Box plot", "Violin plot",
+                                     "Cumulative probability", "Normal Q-Q"],
+                            value="Histogram", label="Analysis", container=True,
+                            filterable=False
+                        )
+                        frequency_input = gr.Radio(
+                            choices=["Daily", "Monthly"], value="Monthly",
+                            label="Return frequency", container=True
+                        )
+                        with gr.Accordion(
+                            f"Sectors · {len(defaults)} selected", open=False
+                        ) as sector_picker:
+                            sector_input = gr.CheckboxGroup(
+                                choices=list(df.columns), value=defaults,
+                                label="Included sectors", container=True
+                            )
+                        with gr.Row():
+                            start_input = gr.Textbox(
+                                value=df.index.min().strftime("%Y-%m-%d"),
+                                label="From", placeholder="YYYY-MM-DD",
+                                lines=1, max_lines=1, min_width=0,
+                                scale=1, container=True
+                            )
+                            end_input = gr.Textbox(
+                                value=df.index.max().strftime("%Y-%m-%d"),
+                                label="To", placeholder="YYYY-MM-DD",
+                                lines=1, max_lines=1, min_width=0,
+                                scale=1, container=True
+                            )
+                    with gr.Tab("Risk"):
+                        with gr.Column() as downside_settings:
+                            gr.Markdown("**Historical downside overlays**")
+                            loss_line_input = gr.Checkbox(
+                                value=True, label="Show loss threshold", container=True
+                            )
+                            loss_input = gr.Number(
+                                value=-4, minimum=-30, maximum=0, step=0.5,
+                                label="Loss threshold (%)", container=True
+                            )
+                            tail_input = gr.Checkbox(
+                                value=False, label="Show historical tail", container=True
+                            )
+                            confidence_input = gr.Slider(
+                                minimum=90, maximum=99, value=95, step=1,
+                                label="Tail confidence (%)", container=True
+                            )
+                            gr.Markdown(
+                                "95% confidence selects the lowest 5% of historical returns."
+                            )
+                    with gr.Tab("Display"):
+                        with gr.Column() as histogram_settings:
+                            range_input = gr.Radio(
+                                choices=["Central 98%", "Full range"],
+                                value="Central 98%", label="Histogram window",
+                                container=True
+                            )
+                            bins_input = gr.Slider(
+                                minimum=10, maximum=100, value=50, step=5,
+                                label="Histogram bins", container=True
+                            )
+                            curve_input = gr.Checkbox(
+                                value=True, label="Density curve", container=True
+                            )
+                            normal_input = gr.Checkbox(
+                                value=False, label="Normal reference", container=True
+                            )
+                        gr.Markdown("Shape settings apply to histograms.")
+            gr.Markdown("Changes update the chart automatically.")
+
+        # PANEL 2: the chart gets the full remaining width
+        with gr.Column(scale=5, min_width=0):
+            with gr.Group():
+                chart_heading = gr.Markdown("### Histogram")
+                validation_message = gr.Markdown()
+                graph = gr.Plot(show_label=False, container=False)
+
+                # This section exists only for histogram range information
+                with gr.Accordion(
+                    "Histogram window · range and excluded-from-view counts",
+                    open=False, visible=True
+                ) as range_details:
+                    message = gr.Markdown()
+
+            # Reading material sits below the chart instead of squeezing it
+            with gr.Group():
+                with gr.Tabs():
+                    with gr.Tab("Interpretation"):
+                        chart_hint = gr.Markdown(chart_explanation("Histogram"))
+                        chart_notes = gr.Markdown(reading_notes("Histogram"))
+                    with gr.Tab("Reference lines"):
+                        gr.Markdown(
+                            "**Dashed red:** the selected loss threshold (default −4%).\n\n"
+                            "**Histogram dotted line / box and violin diamonds:** "
+                            "the historical lower-tail cutoff.\n\n"
+                            "**Box and violin crosses:** average return at or below "
+                            "that cutoff, called the tail mean.\n\n"
+                            "Q-Q uses a normal reference line instead of downside overlays."
+                        )
+                    with gr.Tab("Methodology"):
+                        gr.Markdown(
+                            "Monthly returns compound daily decimal returns. Only "
+                            "whole calendar months inside the selection are included. "
+                            "Months containing missing daily observations are excluded. "
+                            "Selected sectors use common complete observations."
+                        )
+                        gr.Markdown(
+                            "The central histogram window changes the view, not the "
+                            "sample used for density or tail calculations. Full range "
+                            "displays the extremes. These are historical estimates, "
+                            "not forecasts."
+                        )
 
     #Keep this order identical to the function's parameters
-    inputs = [
-        sector_input,
-        start_input,
-        end_input,
-        bins_input,
-        frequency_input,
-        loss_input,
-        curve_input,
-        normal_input,
-        tail_input,
-        confidence_input,
-        chart_input
-    ]
-
-    outputs = [graph, message]
-
-      # Controls whose visibility depends on the graph selected
-    settings_controls = [
-        bins_input,
-        curve_input,
-        normal_input,
-        loss_input,
-        tail_input,
-        confidence_input
-    ]
-
-    # Set the correct controls when the page opens
-    demo.load(
-        fn=update_controls,
-        inputs=chart_input,
-        outputs=settings_controls,
-        queue=False
-    )
-
-    # Adjust the controls automatically when the graph changes
-    chart_input.change(
-        fn=update_controls,
-        inputs=chart_input,
-        outputs=settings_controls,
-        queue=False
-    )
-
-    # Draw the initial graph when the page opens
-    demo.load(
-        fn=draw_histogram,
-        inputs=inputs,
-        outputs=outputs,
-        concurrency_id="histogram",
-        concurrency_limit=1
-    )
-
-    # Automatically update when any input changes
+    inputs = [sector_input, start_input, end_input, bins_input,
+              frequency_input, loss_input, curve_input, normal_input,
+              tail_input, confidence_input, chart_input, range_input, loss_line_input]
+    outputs = [graph, validation_message, message]
+    app.load(fn=render_distribution, inputs=inputs, outputs=outputs,
+             concurrency_id="distribution", concurrency_limit=1)
     for control in inputs:
         control.change(
-            fn=draw_histogram,
-            inputs=inputs,
-            outputs=outputs,
-            trigger_mode="always_last",
-            concurrency_id="histogram",
+            fn=render_distribution, inputs=inputs, outputs=outputs,
+            trigger_mode="always_last", concurrency_id="distribution",
             concurrency_limit=1
         )
+    sector_input.change(
+        fn=lambda selected: gr.update(
+            label=f"Sectors · {len(selected or [])} selected"
+        ), inputs=sector_input, outputs=sector_picker, queue=False
+    )
+    chart_input.change(
+        fn=update_controls, inputs=chart_input,
+        outputs=[histogram_settings, downside_settings, chart_hint,
+                 range_details, chart_notes, chart_heading], queue=False
+    )
+    for control in [sector_input, frequency_input, start_input, end_input]:
+        control.change(
+            fn=selection_summary,
+            inputs=[sector_input, frequency_input, start_input, end_input],
+            outputs=active_selection, queue=False
+        )
+    return {"graph": graph, "message": message, "inputs": inputs,
+            "range_details": range_details, "error": validation_message}
 
 
-# Start the app
-if __name__ == "__main__":
-
-    #Use compact controls and a restrained slate colourway
-    theme = gr.themes.Base(
-        primary_hue="slate",
-        secondary_hue="teal",
-        neutral_hue="slate",
-        spacing_size="sm",
-        radius_size="sm",
-        text_size="sm"
+# Share this theme with the parent dashboard if required
+def make_distribution_theme():
+    # Use only native Gradio theme settings; no CSS or HTML layout.
+    return gr.themes.Base(
+        primary_hue="teal", secondary_hue="slate", neutral_hue="slate",
+        spacing_size="sm", radius_size="sm", text_size="sm",
+        font=["Arial", "sans-serif"]
     ).set(
-        body_background_fill="#EEF1F5",
-        background_fill_primary="#EEF1F5",
-        background_fill_secondary="#FFFFFF",
+        body_background_fill="#EFF2F6",
+        body_background_fill_dark="#EFF2F6",
+        background_fill_primary="#FFFFFF",
+        background_fill_primary_dark="#FFFFFF",
+        background_fill_secondary="#F5F7FA",
+        background_fill_secondary_dark="#F5F7FA",
         block_background_fill="#FFFFFF",
-        block_border_color="#D4DCE5",
+        block_background_fill_dark="#FFFFFF",
+        block_border_width="0px",
+        block_border_color="#E3E8EF",
+        block_border_color_dark="#E3E8EF",
+        block_shadow="none",
         body_text_color="#17283E",
+        body_text_color_dark="#17283E",
+        body_text_color_subdued="#526174",
+        body_text_color_subdued_dark="#526174",
         block_title_text_color="#17283E",
-        input_background_fill="#F8FAFC"
+        block_title_text_color_dark="#17283E",
+        block_label_text_color="#526174",
+        block_label_text_color_dark="#526174",
+        input_background_fill="#F5F7FA",
+        input_background_fill_dark="#F5F7FA",
+        input_border_color="#E3E8EF",
+        input_border_color_dark="#E3E8EF"
     )
 
-    demo.launch(
-        inbrowser=True,
-        theme=theme
-    )
+
+# Start the app only when this file is run directly
+if __name__ == "__main__":
+    with gr.Blocks(title="Return distributions", fill_width=True) as demo:
+        build_distribution_panel(demo)
+    demo.launch(inbrowser=True, theme=make_distribution_theme())
