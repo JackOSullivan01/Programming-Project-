@@ -3,6 +3,7 @@ from io import BytesIO
 import importlib
 import traceback
 
+import pandas as pd
 import gradio as gr
 from PIL import Image, ImageDraw, ImageFont
 from matplotlib import font_manager
@@ -20,14 +21,14 @@ PANELS = [
     {
         "title": "Risk versus return",
         "description": "Compare sector performance and volatility.",
-        "module": "risk_return_graph",
+        "module": "risk_vs_return",
         "preview": "make_risk_preview",
-        "builder": "build_risk_panel"
+        "builder": "risk_vs_return_panel"
     },
     {
         "title": "Industry correlations",
         "description": "Explore how closely sectors move together.",
-        "module": "correlation_graph",
+        "module": "correlation_heatmap1",
         "preview": "make_correlation_preview",
         "builder": "build_correlation_panel"
     },
@@ -180,6 +181,29 @@ def build_dashboard():
                                     getattr(module, connection["preview"], None)
                                     if module is not None else None
                                 )
+
+                                # Generate the preview using his existing graph function
+                                if (
+                                    module is not None
+                                    and connection["builder"] == "build_correlation_panel"
+                                ):
+                                    def preview_fn(correlation_module=module):
+                                        figure, _ = (
+                                            correlation_module.update_correlation_panel(
+                                                correlation_module.ALL_SECTORS,
+                                                correlation_module.MIN_YEAR,
+                                                correlation_module.MAX_YEAR,
+                                                "Monthly",
+                                                "Pearson",
+                                                0.0,
+                                                True,
+                                                False,
+                                                "Full Matrix"
+                                            )
+                                        )
+
+                                        return figure
+
                                 prepared = unavailable_preview("Analysis not yet connected")
                                 if callable(preview_fn):
                                     try:
@@ -228,7 +252,29 @@ def build_dashboard():
                     )
                 if module is not None:
                     try:
-                        getattr(module, connection["builder"])(app)
+                        build_panel = getattr(module, connection["builder"])
+
+                        if connection["builder"] == "build_correlation_panel":
+                            # Connect the existing correlation panel
+                            _, panel_inputs, panel_outputs = build_panel()
+
+                            app.load(
+                                fn=module.update_correlation_panel,
+                                inputs=panel_inputs,
+                                outputs=panel_outputs
+                            )
+
+                        elif connection["builder"] == "risk_vs_return_panel":
+                            # His risk panel expects a table with a Date column
+                            returns = pd.read_csv(
+                                PROJECT_FOLDER / "industry_returns_clean.csv"
+                            )
+
+                            build_panel(returns)
+
+                        else:
+                            build_panel(app)
+                        
                     except Exception:
                         traceback.print_exc()
                         gr.Markdown(
