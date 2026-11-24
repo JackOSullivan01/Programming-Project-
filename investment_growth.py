@@ -5,6 +5,74 @@ import pandas as pd
 import plotly.graph_objects as go
 
 
+PANEL_STYLE = """
+<style>
+#investment-growth-settings {
+    background: #f8fafc;
+    border: 1px solid #dbe3ec;
+    border-radius: 12px;
+    padding: 16px;
+    gap: 10px;
+    color-scheme: light;
+    --background-fill-primary: #fff;
+    --background-fill-secondary: #f1f5f9;
+    --border-color-primary: #dbe3ec;
+    --block-background-fill: transparent;
+    --block-border-width: 0px;
+    --block-shadow: none;
+    --block-padding: 0px;
+    --block-label-background-fill: transparent;
+    --block-label-border-width: 0px;
+    --block-label-text-color: #334155;
+    --block-info-text-color: #475569;
+    --body-text-color: #0f172a;
+    --body-text-color-subdued: #475569;
+    --input-background-fill: #fff;
+    --input-background-fill-focus: #fff;
+    --input-background-fill-hover: #fff;
+    --input-border-color: #cbd5e1;
+    --input-border-color-focus: #0f766e;
+    --input-placeholder-color: #64748b;
+    --input-shadow-focus: 0 0 0 2px #99f6e4;
+}
+#investment-growth-settings h3 {
+    margin: 0 0 4px;
+    color: #0f172a;
+    font-size: 1rem;
+    background: transparent;
+}
+#investment-growth-settings label > span { color: #334155; }
+#investment-growth-settings input {
+    color: #0f172a;
+    caret-color: #0f172a;
+    accent-color: #0f766e;
+}
+#investment-growth-summary {
+    padding: 12px 16px;
+    border: 1px solid #dbe3ec;
+    border-left: 3px solid #0f766e;
+    border-radius: 10px;
+    background: #f8fafc;
+}
+#investment-growth-summary strong { color: #0f172a; }
+#investment-growth-summary p { margin: 0; color: #475569; }
+#investment-growth-summary p + p { margin-top: 4px; }
+#investment-growth-chart {
+    overflow: hidden;
+    border: 1px solid #dbe3ec;
+    border-radius: 12px;
+    background: #fff;
+}
+</style>
+"""
+
+LINE_COLORS = (
+    "#2563A6", "#0F766E", "#A45D24", "#71558C", "#A34162",
+    "#475569", "#087D9A", "#517037", "#8D4242", "#4D5591",
+)
+LINE_DASHES = ("solid", "dash", "dot", "dashdot")
+
+
 def investment_growth(monthly_returns, starting_amount, monthly_contribution):
     balances = [starting_amount]
 
@@ -18,6 +86,7 @@ def investment_growth(monthly_returns, starting_amount, monthly_contribution):
 def build_panel(csv_path):
     daily = pd.read_csv(csv_path, parse_dates=["Date"]).set_index("Date").sort_index()
     industries = daily.columns.tolist()
+    industry_order = {industry: index for index, industry in enumerate(industries)}
 
     # Compound daily returns into calendar-month returns.
     monthly = (1 + daily).resample("ME").prod(min_count=1) - 1
@@ -26,6 +95,11 @@ def build_panel(csv_path):
     end_default = min(last_month, pd.Timestamp("2025-12-31"))
     if start_default > end_default:
         start_default, end_default = first_month, last_month
+
+    default_industries = [
+        industry for industry in ("Technology", "Financials", "Energy")
+        if industry in industry_order
+    ] or industries[:3]
 
     def draw(selected, start_year, end_year, starting_amount, contribution):
         if not selected:
@@ -41,44 +115,47 @@ def build_panel(csv_path):
         if returns.empty or returns.isna().any().any():
             raise gr.Error("Choose a range with monthly returns for every selected industry.")
 
-        # Show the starting balance immediately before the first return.
+        # Include the starting balance before applying the first month's return.
         dates = returns.index.insert(0, returns.index[0] - pd.offsets.MonthEnd(1))
         fig = go.Figure()
+        ending_values = []
 
-        colors = [
-            "#2563EB", "#0F766E", "#B45309", "#7C3AED", "#BE185D",
-            "#475569", "#0369A1", "#4D7C0F", "#9F1239", "#4338CA",
-        ]
-        dashes = ["solid", "dash", "dot", "dashdot"]
-
-        for index, industry in enumerate(selected):
+        for industry in selected:
             balances = investment_growth(returns[industry], starting_amount, contribution)
+            ending_values.append(balances[-1])
+            index = industry_order[industry]
+            color = LINE_COLORS[index % len(LINE_COLORS)]
+            dash = LINE_DASHES[(index // len(LINE_COLORS)) % len(LINE_DASHES)]
             fig.add_scatter(
                 x=dates,
                 y=balances,
                 name=industry,
-                mode="lines",
-                line=dict(
-                    color=colors[index % len(colors)],
-                    width=2.6,
-                    dash=dashes[(index // len(colors)) % len(dashes)],
-                ),
+                mode="lines+markers",
+                line=dict(color=color, width=2.4, dash=dash),
+                marker=dict(color=color, size=[0] * len(returns) + [7]),
                 hovertemplate="$%{y:,.2f}",
             )
 
         fig.update_layout(
             template="plotly_white",
-            height=530,
-            margin=dict(l=28, r=28, t=24, b=28),
+            height=500,
+            margin=dict(l=72, r=22, t=20, b=66),
             paper_bgcolor="#FFFFFF",
             plot_bgcolor="#FFFFFF",
             font=dict(family="Inter, Arial, sans-serif", size=13, color="#334155"),
             hovermode="x unified",
-            hoverlabel=dict(bgcolor="#F8FAFC", bordercolor="#CBD5E1"),
+            hoverlabel=dict(
+                bgcolor="#FFFFFF",
+                bordercolor="#CBD5E1",
+                font=dict(color="#0F172A"),
+            ),
             xaxis=dict(
                 hoverformat="%b %Y",
                 tickformat="%b %Y" if len(returns) <= 24 else "%Y",
-                nticks=7,
+                nticks=6,
+                ticks="outside",
+                ticklen=4,
+                tickcolor="#CBD5E1",
                 showgrid=False,
                 showline=True,
                 linecolor="#CBD5E1",
@@ -95,77 +172,85 @@ def build_panel(csv_path):
             legend=dict(
                 orientation="h",
                 x=0,
-                y=-0.14,
+                y=-0.13,
                 yanchor="top",
+                bgcolor="rgba(0,0,0,0)",
                 title_text="",
             ),
             separators=".,",
         )
-        return fig
 
+        lowest, highest = min(ending_values), max(ending_values)
+        ending_value = f"${lowest:,.2f}"
+        if f"{lowest:.2f}" != f"{highest:.2f}":
+            ending_value += f"–${highest:,.2f}"
+        total_invested = starting_amount + contribution * len(returns)
+        summary = (
+            f"**Ending portfolio value · {ending_value}**\n\n"
+            f"${total_invested:,.2f} invested per industry · "
+            f"{returns.index[0]:%b %Y} to {returns.index[-1]:%b %Y}\n"
+        )
+        return summary, fig
+
+    gr.HTML(PANEL_STYLE, container=False)
     gr.Markdown(
         "## Investment growth\n"
-        "Compare how the same starting investment and monthly contributions "
-        "would have grown across industries."
+        "Compare how the same investment would have grown across industries."
     )
 
     with gr.Row(equal_height=False):
-        with gr.Column(scale=1, min_width=260):
-            with gr.Group():
-                gr.Markdown("### Investment settings")
-                selected = gr.Dropdown(
-                    industries,
-                    value=[industry for industry in ("Technology", "Financials", "Energy")
-                           if industry in industries] or industries[:3],
-                    multiselect=True,
-                    label="Industries",
-                    elem_id="investment-growth-industries",
+        with gr.Column(scale=1, min_width=250, elem_id="investment-growth-settings"):
+            gr.Markdown("### Investment settings")
+            selected = gr.Dropdown(
+                choices=industries,
+                value=default_industries,
+                multiselect=True,
+                label="Industries",
+                elem_id="investment-growth-industries",
+            )
+            with gr.Row():
+                start_year = gr.Number(
+                    value=start_default.year,
+                    minimum=first_month.year,
+                    maximum=last_month.year,
+                    precision=0,
+                    label="Start year",
+                    min_width=90,
                 )
-                with gr.Row():
-                    start_year = gr.Number(
-                        value=start_default.year,
-                        minimum=first_month.year,
-                        maximum=last_month.year,
-                        precision=0,
-                        label="Start year",
-                        min_width=90,
-                    )
-                    end_year = gr.Number(
-                        value=end_default.year,
-                        minimum=first_month.year,
-                        maximum=last_month.year,
-                        precision=0,
-                        label="End year",
-                        min_width=90,
-                    )
-                    starting_amount = gr.Number(
-                        value=1000,
-                        minimum=0,
-                        step=100,
-                        label="Starting investment ($)",
-                    )
-                    contribution = gr.Number(
-                        value=100,
-                        minimum=0,
-                        step=25,
-                        label="Monthly contribution ($)",
-                        info="Added at the end of each month.",
-                    )
-
-        with gr.Column(scale=3, min_width=300):
-            chart = gr.Plot(
-                value=draw(
-                    selected.value,
-                    start_year.value,
-                    end_year.value,
-                    starting_amount.value,
-                    contribution.value,
-                ),
-                show_label=False,
-                container=False,
+                end_year = gr.Number(
+                    value=end_default.year,
+                    minimum=first_month.year,
+                    maximum=last_month.year,
+                    precision=0,
+                    label="End year",
+                    min_width=90,
+                )
+            starting_amount = gr.Number(
+                value=1000,
+                minimum=0,
+                step=100,
+                label="Starting investment ($)",
+            )
+            contribution = gr.Number(
+                value=100,
+                minimum=0,
+                step=25,
+                label="Monthly contribution ($)",
+                info="Added at the end of each month.",
             )
 
-    # Use the existing input's click behavior when the dropdown arrow is clicked.
+        controls = [selected, start_year, end_year, starting_amount, contribution]
+        initial_summary, initial_figure = draw(*(control.value for control in controls))
+        with gr.Column(scale=4, min_width=300):
+            summary = gr.Markdown(initial_summary, elem_id="investment-growth-summary")
+            chart = gr.Plot(
+                value=initial_figure,
+                show_label=False,
+                container=False,
+                elem_id="investment-growth-chart",
+            )
+
+    # Forward clicks on the dropdown arrow to the underlying input.
     gr.on(
         fn=None,
         js="""() => {
@@ -193,9 +278,12 @@ def build_panel(csv_path):
         }""",
     )
 
-    controls = [selected, start_year, end_year, starting_amount, contribution]
-    for control in controls:
-        control.change(draw, inputs=controls, outputs=chart)
+    gr.on(
+        triggers=[control.change for control in controls],
+        fn=draw,
+        inputs=controls,
+        outputs=[summary, chart],
+    )
 
 
 if __name__ == "__main__":
