@@ -587,85 +587,46 @@ def chart_explanation(chart_type):
     return explanations[chart_type]
 
 
-# Generate a simple fixed preview for the dashboard overview
+# Generate a compact violin preview from the real monthly sector returns.
 def make_distribution_preview():
-    selected = [
-        sector
-        for sector in [
-            "Technology",
-            "Financials",
-            "Healthcare",
-            "Energy"
-        ]
-        if sector in df.columns
-    ]
-
+    selected = [name for name in [
+        "Technology", "Financials", "Healthcare", "Energy"
+    ] if name in df.columns]
     if not selected:
         selected = list(df.columns[:4])
 
-    # Compound daily decimal returns into monthly returns
-    monthly = (
-        (1 + df[selected])
-        .resample("ME")
-        .prod(min_count=1)
-        - 1
-    )
-
-    # Exclude months containing missing daily returns
+    monthly = (1 + df[selected]).resample("ME").prod(min_count=1) - 1
     missing = df[selected].isna().resample("ME").sum()
     monthly = monthly.mask(missing > 0).dropna() * 100
 
-    # Arrange the returns for Seaborn
-    plot_data = monthly.melt(
-        var_name="Sector",
-        value_name="Return (%)"
-    )
-
-    fig, ax = plt.subplots(
-        figsize=(11, 5.2),
-        dpi=150,
-        layout="constrained"
-    )
-
+    fig, ax = plt.subplots(figsize=(10, 4.4), dpi=150, layout="constrained")
     if len(monthly) < 3 or (monthly.nunique() < 2).any():
-        ax.text(
-            0.5,
-            0.5,
-            "Not enough monthly data for a violin preview.",
-            transform=ax.transAxes,
-            ha="center"
-        )
+        ax.text(0.5, 0.5, "Not enough monthly data for a preview.",
+                transform=ax.transAxes, ha="center")
         ax.set_axis_off()
-
     else:
+        plot_data = monthly.melt(var_name="Sector", value_name="Return (%)")
         sns.violinplot(
-            data=plot_data,
-            x="Return (%)",
-            y="Sector",
-            order=selected,
-            hue="Sector",
-            palette=PALETTE,
-            dodge=False,
-            legend=False,
-            inner="quart",
-            cut=0,
-            linewidth=1,
-            ax=ax
+            data=plot_data, x="Return (%)", y="Sector", order=selected,
+            hue="Sector", palette=PALETTE, dodge=False, legend=False,
+            inner="quart", cut=0, width=0.68, linewidth=0.7,
+            saturation=1, ax=ax
         )
-
-        # Mark zero return without adding downside overlays
-        ax.axvline(
-            0,
-            color="#94A3B8",
-            linewidth=0.8
-        )
-
-        ax.set_xlabel("Monthly return (%)")
+        ax.axvline(0, color="#94A3B8", linewidth=0.8, zorder=0)
+        ax.set_xlabel("Monthly return (%)", fontsize=13, labelpad=8)
         ax.set_ylabel("")
-
+        first = monthly.index.min().to_period("M").start_time.strftime("%b %Y")
+        last = monthly.index.max().strftime("%b %Y")
+        ax.set_title(f"Monthly returns · {first} – {last}",
+                     loc="left", fontsize=12, pad=12)
     style_figure(fig)
+    # Preview labels need to stay readable at half-page width.
+    ax.tick_params(axis="y", labelsize=13, pad=8)
+    ax.tick_params(axis="x", labelsize=11)
+    ax.grid(False)
+    ax.spines["bottom"].set_color("#DCE3EC")
+    ax.title.set_fontweight("normal")
     plt.close(fig)
-
     return fig
 
 

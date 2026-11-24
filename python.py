@@ -1,4 +1,5 @@
 from pathlib import Path
+from io import BytesIO
 import importlib
 import traceback
 
@@ -71,20 +72,65 @@ def make_title_banner():
     return image
 
 
-# Standardise supplied figures without changing their underlying data.
+PREVIEW_HEIGHT = 300
+CARD_HEADER_HEIGHT = 82
+
+
+def make_card_header(title, description):
+    # Equal-sized, high-contrast title strips rendered entirely in Python.
+    width, height = 1200, 150
+    image = Image.new("RGB", (width, height), "#17283E")
+    draw = ImageDraw.Draw(image)
+    bold = font_manager.findfont(
+        font_manager.FontProperties(family="DejaVu Sans", weight="bold")
+    )
+    regular = font_manager.findfont(
+        font_manager.FontProperties(family="DejaVu Sans")
+    )
+    draw.rectangle((0, 0, 7, height), fill="#19A99D")
+    draw.text((35, 50), title, font=ImageFont.truetype(bold, 46),
+              fill="white", anchor="lm")
+    draw.text((35, 110), description,
+              font=ImageFont.truetype(regular, 25),
+              fill="#CBD9E8", anchor="lm")
+    return image
+
+
+def unavailable_preview(text):
+    # A clearly labelled empty frame, never an invented chart.
+    image = Image.new("RGB", (1000, 440), "white")
+    draw = ImageDraw.Draw(image)
+    font = font_manager.findfont(
+        font_manager.FontProperties(family="DejaVu Sans")
+    )
+    draw.text((500, 220), text, font=ImageFont.truetype(font, 25),
+              fill="#637084", anchor="mm")
+    return image
+
+
 def prepare_preview(figure):
     if hasattr(figure, "set_size_inches"):
-        figure.set_size_inches(11, 5.2)
+        figure.set_size_inches(10, 4.4)
         figure.set_dpi(150)
         figure.set_facecolor("white")
-    elif hasattr(figure, "update_layout"):
+        # Use an Image with an actual fixed height for Matplotlib previews.
+        # Plot does not expose a height argument for these static figures.
+        buffer = BytesIO()
+        figure.savefig(buffer, format="png", dpi=150, facecolor="white")
+        buffer.seek(0)
+        with Image.open(buffer) as image:
+            return image.convert("RGB").copy()
+    if hasattr(figure, "update_layout"):
         figure.update_layout(
-            height=340, autosize=True,
+            height=PREVIEW_HEIGHT, autosize=True,
             paper_bgcolor="white", plot_bgcolor="white",
             margin={"l": 45, "r": 20, "t": 30, "b": 55},
             font={"family": "Arial, sans-serif", "color": "#17283E"}
         )
-    return figure
+        return figure
+    if isinstance(figure, Image.Image):
+        return figure
+    raise TypeError("Preview functions must return a Matplotlib or Plotly figure, or a PIL image.")
 
 
 def find_panel(connection):
@@ -101,19 +147,6 @@ def find_panel(connection):
         return None, "Not yet available"
     # A missing preview should not block a working detailed analysis.
     return module, "Ready to explore"
-
-
-def preview_loader(preview_function):
-    def load_preview():
-        try:
-            figure = preview_function()
-            if figure is None:
-                return None, "Preview unavailable. Open the analysis to explore."
-            return prepare_preview(figure), ""
-        except Exception:
-            traceback.print_exc()
-            return None, "Preview unavailable. Open the analysis to explore."
-    return load_preview
 
 
 def navigation_action(views, destination):
@@ -143,7 +176,6 @@ def build_dashboard():
             )
 
             explore_buttons = []
-            preview_connections = []
             categories = ["GROWTH", "RISK", "DIVERSIFICATION", "DISTRIBUTION"]
 
             for row_start in [0, 2]:
@@ -154,50 +186,50 @@ def build_dashboard():
 
                         with gr.Column(scale=1, min_width=0):
                             with gr.Group():
-                                with gr.Row():
-                                    gr.Markdown(
-                                        f"**0{index + 1} / {categories[index]}**",
-                                        scale=3, min_width=0
-                                    )
-                                    gr.Markdown(
-                                        status, scale=1, min_width=0
-                                    )
-                                gr.Markdown(f"## {connection['title']}")
-                                gr.Markdown(
-                                    connection["description"], min_height=40
+                                gr.Image(
+                                    value=make_card_header(
+                                        connection["title"], connection["description"]
+                                    ),
+                                    label=connection["title"],
+                                    alt_text=f"{connection['title']}. {connection['description']}",
+                                    show_label=False, container=False, interactive=False,
+                                    buttons=[], height=CARD_HEADER_HEIGHT,
+                                    width="100%", format="png"
                                 )
-
                                 preview_fn = (
                                     getattr(module, connection["preview"], None)
                                     if module is not None else None
                                 )
+                                prepared = unavailable_preview("Analysis not yet connected")
                                 if callable(preview_fn):
-                                    preview = gr.Plot(
-                                        show_label=False, container=False
+                                    try:
+                                        figure = preview_fn()
+                                        if figure is not None:
+                                            prepared = prepare_preview(figure)
+                                        else:
+                                            prepared = unavailable_preview("Preview unavailable")
+                                    except Exception:
+                                        traceback.print_exc()
+                                        prepared = unavailable_preview("Preview unavailable")
+                                if isinstance(prepared, Image.Image):
+                                    gr.Image(
+                                        value=prepared, label=f"{connection['title']} preview",
+                                        alt_text=f"Overview preview of {connection['title'].lower()}",
+                                        show_label=False, container=False, interactive=False,
+                                        buttons=[], height=PREVIEW_HEIGHT,
+                                        width="100%", format="png"
                                     )
-                                    preview_status = gr.Markdown(min_height=25)
-                                    preview_connections.append((
-                                        preview_fn, preview, preview_status
-                                    ))
                                 else:
-                                    # A blank, labelled panel rather than fabricated data.
-                                    gr.Markdown(
-                                        "### Your analysis will appear here\n\n"
-                                        + (
-                                            "The detailed analysis is ready to open."
-                                            if module is not None else
-                                            "This panel will become available once "
-                                            "its graph file has been connected."
-                                        ),
-                                        min_height=340
-                                    )
-                                    gr.Markdown("", min_height=25)
-
-                                explore_buttons.append(gr.Button(
-                                    f"Explore {connection['title'].lower()} →",
-                                    variant="primary", size="sm",
-                                    interactive=(module is not None)
-                                ))
+                                    # Plotly respects its fixed layout height.
+                                    gr.Plot(value=prepared, show_label=False, container=False)
+                                # A compact right-aligned action, rather than a colour strip.
+                                with gr.Row():
+                                    gr.Markdown("", scale=1, min_width=0)
+                                    explore_buttons.append(gr.Button(
+                                        "Explore analysis →", variant="primary", size="md",
+                                        scale=0, min_width=175,
+                                        interactive=(module is not None)
+                                    ))
 
         detail_views = []
         back_buttons = []
@@ -237,12 +269,6 @@ def build_dashboard():
             button.click(
                 fn=navigation_action(views, 0), outputs=views, queue=False
             )
-        for preview_function, preview, preview_status in preview_connections:
-            app.load(
-                fn=preview_loader(preview_function),
-                outputs=[preview, preview_status],
-                concurrency_id="distribution", concurrency_limit=1
-            )
     return app
 
 
@@ -256,12 +282,15 @@ def make_dashboard_theme():
         body_background_fill_dark="#EFF2F6",
         background_fill_primary="#FFFFFF",
         background_fill_primary_dark="#FFFFFF",
-        background_fill_secondary="#F5F7FA",
-        background_fill_secondary_dark="#F5F7FA",
+        background_fill_secondary="#FFFFFF",
+        background_fill_secondary_dark="#FFFFFF",
         block_background_fill="#FFFFFF",
         block_background_fill_dark="#FFFFFF",
         block_border_width="0px",
         block_shadow="none",
+        block_padding="10px",
+        layout_gap="10px",
+        button_medium_padding="10px 18px",
         body_text_color="#17283E",
         body_text_color_dark="#17283E",
         body_text_color_subdued="#526174",
