@@ -315,6 +315,43 @@ def update_correlation_panel(
 
     return fig, summary_md
 
+def make_correlation_preview():
+    """
+    Clean, compact preview heatmap for the main 4-panel overview screen.
+    Matches the light background and minimal style of the other dashboard cards.
+    """
+    fig, _ = update_correlation_panel(
+        selected_sectors=ALL_SECTORS,
+        start_year=2000,
+        end_year=MAX_YEAR,
+        frequency="Monthly",
+        corr_method="Pearson",
+        abs_threshold=0.0,
+        show_values=True,
+        hide_insignificant=False,
+        triangle_mode="Full Matrix",
+    )
+    fig.update_traces(
+        showscale=False,
+        textfont=dict(size=10),
+    )
+    fig.update_layout(
+        title=dict(
+            text="<span style='font-size:12px;color:#475569;'>Monthly returns • Jan 2000 – Sep 2026</span>",
+            x=0.02,
+            y=0.97,
+        ),
+        template="plotly_white",
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        font=dict(color="#1e293b", size=11),
+        xaxis=dict(side="top", tickangle=-25, dtick=1),
+        yaxis=dict(autorange="reversed", dtick=1),
+        margin=dict(l=115, r=15, t=65, b=10),
+        height=270,
+    )
+    return fig
+
 # ==============================================================================
 # 4. MODULAR GRADIO PANEL BUILDER (INTEGRATES INTO 4-PANEL DASHBOARD)
 # ==============================================================================
