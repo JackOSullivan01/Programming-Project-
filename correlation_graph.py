@@ -419,5 +419,6 @@ if __name__ == "__main__":
             inputs=init_inputs,
             outputs=init_outputs,
         )
-
+        
     demo.launch()
+
