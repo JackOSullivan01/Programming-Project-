@@ -1,9 +1,11 @@
+from contextlib import nullcontext
 from html import escape
 from math import ceil, floor, isfinite
 from pathlib import Path
 from uuid import uuid4
 
 import gradio as gr
+from gradio.context import get_blocks_context
 import pandas as pd
 import plotly.graph_objects as go
 
@@ -55,8 +57,10 @@ def add_industry_labels(fig, x, y, x_range, y_range):
     left, right = x_range
     bottom, top = y_range
     points = [
-        ((risk - left) / (right - left) * width,
-         (ret - bottom) / (top - bottom) * height)
+        (
+            (risk - left) / (right - left) * width,
+            (ret - bottom) / (top - bottom) * height,
+        )
         for risk, ret in zip(x, y)
     ]
     occupied = [(px - 7, py - 7, px + 7, py + 7) for px, py in points]
@@ -95,7 +99,7 @@ def add_industry_labels(fig, x, y, x_range, y_range):
         )
 
 
-def risk_vs_return_panel(returns):
+def _prepare_risk_chart(returns):
     returns = returns.copy()
     returns["Date"] = pd.to_datetime(returns["Date"])
     returns = returns.sort_values("Date").set_index("Date")
@@ -347,6 +351,23 @@ def risk_vs_return_panel(returns):
         )
         return "\n\n".join(messages), fig, table
 
+    initial = update_chart(
+        industries, first_date, last_date, "Volatility", default_frequency,
+        default_return_target, default_volatility_target,
+    )
+    return (
+        update_chart, industries, first_date, last_date, frequencies,
+        default_frequency, default_return_target, default_volatility_target, initial,
+    )
+
+
+def risk_vs_return_panel(returns):
+    (
+        update_chart, industries, first_date, last_date, frequencies,
+        default_frequency, default_return_target, default_volatility_target, initial,
+    ) = _prepare_risk_chart(returns)
+    initial_status, initial_plot, initial_table = initial
+
     def slider_settings(figure, return_target, volatility_target):
         # Keep the current targets in range when filters change.
         returns = [return_target, -2, 2]
@@ -378,16 +399,12 @@ def risk_vs_return_panel(returns):
             gr.update(**volatility_range, interactive=risk_measure == "Volatility"),
         )
 
-    initial_status, initial_plot, initial_table = update_chart(
-        industries, first_date, last_date, "Volatility", default_frequency,
-        default_return_target, default_volatility_target,
-    )
     return_range, volatility_range = slider_settings(
         initial_plot, default_return_target, default_volatility_target,
     )
     panel_id = f"risk-return-{uuid4().hex}"
 
-    with gr.Column(elem_classes=["risk-panel"]):
+    with gr.Column(elem_classes=["risk-panel"]) as panel:
         gr.Markdown("# Risk vs Return")
 
         with gr.Column(elem_classes=["risk-controls"]):
@@ -455,15 +472,41 @@ def risk_vs_return_panel(returns):
             outputs=[status, plot, table],
         )
 
+    return panel
 
-if __name__ == "__main__":
+
+def _load_returns():
     csv_path = Path(__file__).with_name("industry_returns_clean.csv")
     if not csv_path.is_file():
         csv_path = csv_path.parent / "upload" / csv_path.name
-    returns = pd.read_csv(csv_path)
+    return pd.read_csv(csv_path)
 
-    with gr.Blocks() as app:
-        risk_vs_return_panel(returns)
+
+def make_risk_preview():
+    """Return a compact Plotly figure for the dashboard overview."""
+    *_, (_, figure, _) = _prepare_risk_chart(_load_returns())
+    if figure is None:
+        figure = go.Figure()
+        figure.add_annotation(text="No usable monthly returns", showarrow=False)
+    else:
+        # Use hover labels in the overview to keep the smaller chart readable.
+        figure.layout.annotations = ()
+
+    figure.update_layout(height=260, margin=dict(l=50, r=18, t=16, b=48))
+    figure.update_xaxes(automargin=True)
+    figure.update_yaxes(automargin=True)
+    return figure
+
+
+def build_risk_panel(app):
+    """Build the detailed panel in the dashboard's active Gradio container."""
+    with nullcontext() if get_blocks_context() is app else app:
+        return risk_vs_return_panel(_load_returns())
+
+
+if __name__ == "__main__":
+    app = gr.Blocks()
+    build_risk_panel(app)
 
     theme = gr.themes.Soft(
         primary_hue="teal", neutral_hue="slate",
