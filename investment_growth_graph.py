@@ -373,8 +373,33 @@ def build_panel(csv_path):
 
 def make_growth_preview():
     csv_path = Path(__file__).with_name("industry_returns_clean.csv")
-    daily = pd.read_csv(csv_path, parse_dates=["Date"]).set_index("Date").sort_index()
+    fig = go.Figure()
+    daily = pd.read_csv(csv_path)
+
+    if "Date" not in daily.columns:
+        fig.add_annotation(
+            text="Investment data is missing a Date column.",
+            x=0.5,
+            y=0.5,
+            xref="paper",
+            yref="paper",
+            showarrow=False,
+        )
+        return fig
+
+    daily["Date"] = pd.to_datetime(daily["Date"], errors="coerce")
+    daily = daily.set_index("Date").sort_index()
     monthly = (1 + daily).resample("ME").prod(min_count=1) - 1
+    if monthly.empty:
+        fig.add_annotation(
+            text="No monthly returns available for the preview.",
+            x=0.5,
+            y=0.5,
+            xref="paper",
+            yref="paper",
+            showarrow=False,
+        )
+        return fig
 
     # Use the same default years and industries as the full panel.
     preview_returns = monthly.loc["2010":"2025"]
@@ -387,7 +412,6 @@ def make_growth_preview():
     ] or preview_returns.columns[:3].tolist()
 
     preview_returns = preview_returns[industries].dropna()
-    fig = go.Figure()
 
     if preview_returns.empty:
         fig.add_annotation(
@@ -415,7 +439,7 @@ def make_growth_preview():
                 hovertemplate="$%{y:,.0f}",
             )
 
-            fig.update_layout(
+        fig.update_layout(
             template="plotly_white",
             height=280,
             margin=dict(l=46, r=16, t=68, b=42),
@@ -447,7 +471,7 @@ def make_growth_preview():
             ),
         )
     return fig
-def build_growth_panel(app):
+def build_growth_panel(_app=None):
     csv_path = Path(__file__).with_name("industry_returns_clean.csv")
     build_panel(csv_path)
 if __name__ == "__main__":
