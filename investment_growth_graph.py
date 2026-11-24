@@ -1,3 +1,4 @@
+import math
 from pathlib import Path
 
 import gradio as gr
@@ -120,6 +121,21 @@ def build_panel(csv_path):
             raise gr.Error("Choose at least one industry.")
         if None in (start_year, end_year, starting_amount, contribution, goal):
             raise gr.Error("Enter both years, both dollar amounts, and an investment goal.")
+        try:
+            numeric_values = tuple(
+                float(value)
+                for value in (start_year, end_year, starting_amount, contribution, goal)
+            )
+        except (TypeError, ValueError):
+            raise gr.Error("All investment settings must be numeric.")
+        if not all(math.isfinite(value) for value in numeric_values):
+            raise gr.Error("All investment settings must contain finite numbers.")
+
+        start_year, end_year, starting_amount, contribution, goal = numeric_values
+        if not start_year.is_integer() or not end_year.is_integer():
+            raise gr.Error("Start year and end year must be whole numbers.")
+        start_year = int(start_year)
+        end_year = int(end_year)
         if start_year > end_year:
             raise gr.Error("Start year must be at or before end year.")
         if starting_amount < 0 or contribution < 0 or goal < 0:
