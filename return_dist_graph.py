@@ -7,6 +7,8 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+from PIL import Image, ImageDraw, ImageFont
+from matplotlib import font_manager
 
 
 # Load the cleaned dataset
@@ -99,6 +101,13 @@ def add_graph_details(fig, returns, frequency):
     )
 
 
+def parse_input_date(value):
+    # Irish input dates use day/month/year. ISO remains accepted for callers.
+    text = str(value).strip()
+    date_format = "%Y-%m-%d" if "-" in text else "%d/%m/%Y"
+    return pd.to_datetime(text, format=date_format, errors="coerce")
+
+
 # Gradio runs this function whenever an input changes
 def draw_histogram(
         sector, start_date, end_date, bins, frequency, loss_threshold,
@@ -110,12 +119,12 @@ def draw_histogram(
         return None, "Choose at least one sector."
 
     # Convert the text inputs into dates
-    start = pd.to_datetime(start_date, errors="coerce")
-    end = pd.to_datetime(end_date, errors="coerce")
+    start = parse_input_date(start_date)
+    end = parse_input_date(end_date)
 
     # Check the dates are valid
     if pd.isna(start) or pd.isna(end):
-        return None, "Enter dates as YYYY-MM-DD."
+        return None, "Enter dates as DD/MM/YYYY, for example 24/11/2026."
 
     if start > end:
         return None, "Choose a start date before the end date."
@@ -250,7 +259,6 @@ def draw_histogram(
             axes.flat[i].set_visible(False)
 
         style_figure(fig)
-        add_graph_details(fig, sector_returns, frequency)
         plt.close(fig)
 
         return fig, ""
@@ -313,18 +321,11 @@ def draw_histogram(
         ax.set_ylim(0, 1)
         ax.yaxis.set_major_formatter(PercentFormatter(1))
 
-        ax.set_title(
-            "Cumulative probability",
-            loc="left",
-            fontweight="bold"
-        )
-
         ax.set_xlabel(f"{frequency} return (%)")
         ax.set_ylabel("Proportion of observations at or below return")
         ax.legend(frameon=False, fontsize=8)
 
         style_figure(fig)
-        add_graph_details(fig, sector_returns, frequency)
         plt.close(fig)
 
         return fig, ""
@@ -447,18 +448,11 @@ def draw_histogram(
                 )
 
         #Label and display the selected graph
-        ax.set_title(
-            chart_type,
-            loc="left",
-            fontweight="bold"
-        )
-
         ax.set_xlabel(f"{frequency} return (%)")
         ax.set_ylabel("")
         ax.legend(frameon=False, fontsize=8, loc="best")
 
         style_figure(fig)
-        add_graph_details(fig, sector_returns, frequency)
         plt.close(fig)
 
         return fig, ""
@@ -567,7 +561,6 @@ def draw_histogram(
             ncol=min(4, len(handles)), frameon=False, fontsize=8
         )
     style_figure(fig)
-    add_graph_details(fig, sector_returns, frequency)
     plt.close(fig)
 
     message = ""
@@ -663,10 +656,54 @@ def render_distribution(*inputs):
 
 
 def selection_summary(sectors, frequency, start_date, end_date):
-    return (
-        f"**{len(sectors or [])} sectors** · **{frequency} returns**  \n"
-        f"{start_date} — {end_date}"
+    # Match the main dashboard's navy header, with a slimmer profile.
+    width, height = 2200, 220
+    image = Image.new("RGB", (width, height), "#17283E")
+    draw = ImageDraw.Draw(image)
+    bold_path = font_manager.findfont(
+        font_manager.FontProperties(family="DejaVu Sans", weight="bold")
     )
+    regular_path = font_manager.findfont(
+        font_manager.FontProperties(family="DejaVu Sans")
+    )
+    draw.text(
+        (width / 2, 65), "Return distributions",
+        font=ImageFont.truetype(bold_path, 78),
+        fill="#FFFFFF", anchor="mm"
+    )
+    draw.text(
+        (width / 2, 125),
+        "A clearer view of sector returns, from typical outcomes to tail risk.",
+        font=ImageFont.truetype(regular_path, 27),
+        fill="#CBD9E8", anchor="mm"
+    )
+    draw.text(
+        (width / 2, 174),
+        f"{len(sectors or [])} sectors  ·  {frequency} returns  ·  "
+        f"{start_date} — {end_date}",
+        font=ImageFont.truetype(regular_path, 24),
+        fill="#7ED7CF", anchor="mm"
+    )
+    return image
+
+
+def make_controls_banner():
+    image = Image.new("RGB", (900, 125), "#087F83")
+    draw = ImageDraw.Draw(image)
+    font_path = font_manager.findfont(
+        font_manager.FontProperties(family="DejaVu Sans", weight="bold")
+    )
+    draw.text(
+        (450, 62), "Configure analysis",
+        font=ImageFont.truetype(font_path, 52),
+        fill="#FFFFFF", anchor="mm"
+    )
+    return image
+
+
+def show_settings_section(section):
+    return tuple(gr.update(visible=(section == name))
+                 for name in ["Data", "Risk", "Display"])
 
 
 # Build this panel inside the parent dashboard's Blocks app
@@ -678,93 +715,106 @@ def build_distribution_panel(app):
     if not defaults:
         defaults = list(df.columns[:4])
 
-    # A restrained editorial heading, rather than competing slogans
-    with gr.Row(equal_height=False):
-        with gr.Column(scale=3, min_width=0):
-            gr.Markdown("# Return distributions")
-            gr.Markdown("**A clearer view of sector returns, from typical outcomes to tail risk.**")
-        with gr.Column(scale=1, min_width=220):
-            active_selection = gr.Markdown(selection_summary(
-                defaults, "Monthly", df.index.min().strftime("%Y-%m-%d"),
-                df.index.max().strftime("%Y-%m-%d")
-            ))
+    # A single navy header keeps title and selection details together.
+    active_selection = gr.Image(
+        value=selection_summary(
+            defaults, "Monthly", df.index.min().strftime("%d/%m/%Y"),
+            df.index.max().strftime("%d/%m/%Y")
+        ),
+        label="Return distributions",
+        alt_text="Return distributions. Sector return patterns and historical tail risk.",
+        show_label=False, container=False, interactive=False,
+        buttons=[], width="100%", format="png"
+    )
 
     with gr.Row(equal_height=False):
         # PANEL 1: a compact settings sidebar
         with gr.Column(scale=1, min_width=270):
             with gr.Group():
-                gr.Markdown("### Configure analysis")
-                with gr.Tabs():
-                    with gr.Tab("Data"):
-                        chart_input = gr.Dropdown(
-                            choices=["Histogram", "Box plot", "Violin plot",
-                                     "Cumulative probability", "Normal Q-Q"],
-                            value="Histogram", label="Analysis", container=True,
-                            filterable=False
+                gr.Image(
+                    value=make_controls_banner(), label="Configure analysis",
+                    alt_text="Configure analysis", show_label=False,
+                    container=False, interactive=False, buttons=[],
+                    width="100%", format="png"
+                )
+                # Centre the navigation group using native layout components.
+                with gr.Row():
+                    gr.Markdown("", scale=1, min_width=0)
+                    settings_navigation = gr.Radio(
+                        choices=["Data", "Risk", "Display"], value="Data",
+                        label="Settings section", show_label=False,
+                        container=False, scale=0, min_width=235
+                    )
+                    gr.Markdown("", scale=1, min_width=0)
+                with gr.Column(visible=True) as data_section:
+                    chart_input = gr.Dropdown(
+                        choices=["Histogram", "Box plot", "Violin plot",
+                                 "Cumulative probability", "Normal Q-Q"],
+                        value="Histogram", label="Analysis", container=True,
+                        filterable=False
+                    )
+                    frequency_input = gr.Radio(
+                        choices=["Daily", "Monthly"], value="Monthly",
+                        label="Return frequency", container=True
+                    )
+                    with gr.Accordion(
+                        f"Sectors · {len(defaults)} selected", open=False
+                    ) as sector_picker:
+                        sector_input = gr.CheckboxGroup(
+                            choices=list(df.columns), value=defaults,
+                            label="Included sectors", container=True
                         )
-                        frequency_input = gr.Radio(
-                            choices=["Daily", "Monthly"], value="Monthly",
-                            label="Return frequency", container=True
+                    with gr.Row():
+                        start_input = gr.Textbox(
+                            value=df.index.min().strftime("%d/%m/%Y"),
+                            label="From", placeholder="DD/MM/YYYY",
+                            lines=1, max_lines=1, min_width=0,
+                            scale=1, container=True
                         )
-                        with gr.Accordion(
-                            f"Sectors · {len(defaults)} selected", open=False
-                        ) as sector_picker:
-                            sector_input = gr.CheckboxGroup(
-                                choices=list(df.columns), value=defaults,
-                                label="Included sectors", container=True
-                            )
-                        with gr.Row():
-                            start_input = gr.Textbox(
-                                value=df.index.min().strftime("%Y-%m-%d"),
-                                label="From", placeholder="YYYY-MM-DD",
-                                lines=1, max_lines=1, min_width=0,
-                                scale=1, container=True
-                            )
-                            end_input = gr.Textbox(
-                                value=df.index.max().strftime("%Y-%m-%d"),
-                                label="To", placeholder="YYYY-MM-DD",
-                                lines=1, max_lines=1, min_width=0,
-                                scale=1, container=True
-                            )
-                    with gr.Tab("Risk"):
-                        with gr.Column() as downside_settings:
-                            gr.Markdown("**Historical downside overlays**")
-                            loss_line_input = gr.Checkbox(
-                                value=True, label="Show loss threshold", container=True
-                            )
-                            loss_input = gr.Number(
-                                value=-4, minimum=-30, maximum=0, step=0.5,
-                                label="Loss threshold (%)", container=True
-                            )
-                            tail_input = gr.Checkbox(
-                                value=False, label="Show historical tail", container=True
-                            )
-                            confidence_input = gr.Slider(
-                                minimum=90, maximum=99, value=95, step=1,
-                                label="Tail confidence (%)", container=True
-                            )
-                            gr.Markdown(
-                                "95% confidence selects the lowest 5% of historical returns."
-                            )
-                    with gr.Tab("Display"):
-                        with gr.Column() as histogram_settings:
-                            range_input = gr.Radio(
-                                choices=["Central 98%", "Full range"],
-                                value="Central 98%", label="Histogram window",
-                                container=True
-                            )
-                            bins_input = gr.Slider(
-                                minimum=10, maximum=100, value=50, step=5,
-                                label="Histogram bins", container=True
-                            )
-                            curve_input = gr.Checkbox(
-                                value=True, label="Density curve", container=True
-                            )
-                            normal_input = gr.Checkbox(
-                                value=False, label="Normal reference", container=True
-                            )
-                        gr.Markdown("Shape settings apply to histograms.")
-            gr.Markdown("Changes update the chart automatically.")
+                        end_input = gr.Textbox(
+                            value=df.index.max().strftime("%d/%m/%Y"),
+                            label="To", placeholder="DD/MM/YYYY",
+                            lines=1, max_lines=1, min_width=0,
+                            scale=1, container=True
+                        )
+                with gr.Column(visible=False) as risk_section:
+                    with gr.Column() as downside_settings:
+                        gr.Markdown("**Historical downside overlays**")
+                        loss_line_input = gr.Checkbox(
+                            value=True, label="Show loss threshold", container=True
+                        )
+                        loss_input = gr.Number(
+                            value=-4, minimum=-30, maximum=0, step=0.5,
+                            label="Loss threshold (%)", container=True
+                        )
+                        tail_input = gr.Checkbox(
+                            value=False, label="Show historical tail", container=True
+                        )
+                        confidence_input = gr.Slider(
+                            minimum=90, maximum=99, value=95, step=1,
+                            label="Tail confidence (%)", container=True
+                        )
+                        gr.Markdown(
+                            "95% confidence selects the lowest 5% of historical returns."
+                        )
+                with gr.Column(visible=False) as display_section:
+                    with gr.Column() as histogram_settings:
+                        range_input = gr.Radio(
+                            choices=["Central 98%", "Full range"],
+                            value="Central 98%", label="Histogram window",
+                            container=True
+                        )
+                        bins_input = gr.Slider(
+                            minimum=10, maximum=100, value=50, step=5,
+                            label="Histogram bins", container=True
+                        )
+                        curve_input = gr.Checkbox(
+                            value=True, label="Density curve", container=True
+                        )
+                        normal_input = gr.Checkbox(
+                            value=False, label="Normal reference", container=True
+                        )
+                    gr.Markdown("Shape settings apply to histograms.")
 
         # PANEL 2: the chart gets the full remaining width
         with gr.Column(scale=5, min_width=0):
@@ -808,6 +858,11 @@ def build_distribution_panel(app):
                             "displays the extremes. These are historical estimates, "
                             "not forecasts."
                         )
+
+    settings_navigation.change(
+        fn=show_settings_section, inputs=settings_navigation,
+        outputs=[data_section, risk_section, display_section], queue=False
+    )
 
     #Keep this order identical to the function's parameters
     inputs = [sector_input, start_input, end_input, bins_input,
