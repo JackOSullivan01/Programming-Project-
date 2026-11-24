@@ -329,15 +329,37 @@ def make_growth_preview():
                 hovertemplate="$%{y:,.0f}",
             )
 
-    fig.update_layout(
-        template="plotly_white",
-        height=260,
-        margin=dict(l=12, r=12, t=12, b=12),
-        hovermode="x unified",
-        xaxis=dict(showgrid=False, nticks=5, automargin=True),
-        yaxis=dict(tickprefix="$", tickformat="~s", automargin=True),
-        legend=dict(orientation="h", y=-0.18),
-    )
+            fig.update_layout(
+            template="plotly_white",
+            height=280,
+            margin=dict(l=46, r=16, t=68, b=42),
+            paper_bgcolor="#FFFFFF",
+            plot_bgcolor="#FFFFFF",
+            font=dict(family="Inter, Arial, sans-serif", size=11, color="#334155"),
+            title=dict(
+                text="USD 1,000 upfront + USD 100 per month",
+                x=0.04,
+                xanchor="left",
+                font=dict(size=13, color="#475569"),
+            ),
+            hovermode="x unified",
+            xaxis=dict(showgrid=False, nticks=4, automargin=True),
+            yaxis=dict(
+                tickprefix="$",
+                tickformat="~s",
+                nticks=4,
+                gridcolor="#E2E8F0",
+                zeroline=False,
+                automargin=True,
+            ),
+            legend=dict(
+                orientation="h",
+                x=0,
+                y=1.02,
+                yanchor="bottom",
+                font=dict(size=10),
+            ),
+        )
     return fig
 def build_growth_panel(app):
     csv_path = Path(__file__).with_name("industry_returns_clean.csv")
