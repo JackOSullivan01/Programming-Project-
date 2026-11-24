@@ -1,265 +1,282 @@
-import streamlit as st
+from pathlib import Path
+import importlib
+import traceback
 
-st.set_page_config(
-    page_title="Industry Performance Explorer",
-    page_icon="📊",
-    layout="wide"
-)
+import gradio as gr
+from PIL import Image, ImageDraw, ImageFont
+from matplotlib import font_manager
 
-# Main heading
-with st.container(horizontal_alignment="center"):
-    st.title("Industry Performance Explorer")
-    st.caption("GROWTH  •  RISK  •  DIVERSIFICATION")
-    st.write("Compare industries and explore investment performance.")
 
-st.divider()
-
-# Example choices until the real dataset is connected
-industries = [
-    "Technology",
-    "Banking",
-    "Energy",
-    "Healthcare",
-    "Retail",
-    "Manufacturing"
+# Each graph module supplies its own preview and detailed panel.
+PANELS = [
+    {
+        "title": "Investment growth",
+        "description": "Explore historical investment performance.",
+        "module": "investment_growth_graph",
+        "preview": "make_growth_preview",
+        "builder": "build_growth_panel"
+    },
+    {
+        "title": "Risk versus return",
+        "description": "Compare sector performance and volatility.",
+        "module": "risk_return_graph",
+        "preview": "make_risk_preview",
+        "builder": "build_risk_panel"
+    },
+    {
+        "title": "Industry correlations",
+        "description": "Explore how closely sectors move together.",
+        "module": "correlation_graph",
+        "preview": "make_correlation_preview",
+        "builder": "build_correlation_panel"
+    },
+    {
+        "title": "Return distributions",
+        "description": "Investigate return patterns and downside risk.",
+        "module": "return_dist_graph",
+        "preview": "make_distribution_preview",
+        "builder": "build_distribution_panel"
+    }
 ]
 
-top_left, top_right = st.columns(2, gap="large")
+PROJECT_FOLDER = Path(__file__).resolve().parent
 
-# PANEL 1 — INVESTMENT GROWTH
-with top_left:
-    with st.container(border=True):
-        st.subheader("📈 Investment growth")
-        st.caption("Explore how your investment could have grown.")
 
-        growth_industries = st.multiselect(
-            "Choose industries",
-            options=industries,
-            default=["Technology", "Banking"],
-            key="growth_industries"
+def make_title_banner():
+    # Render the header in Python for exact centring without CSS or HTML.
+    width, height = 2200, 280
+    image = Image.new("RGB", (width, height), "#17283E")
+    draw = ImageDraw.Draw(image)
+    bold_path = font_manager.findfont(
+        font_manager.FontProperties(family="DejaVu Sans", weight="bold")
+    )
+    regular_path = font_manager.findfont(
+        font_manager.FontProperties(family="DejaVu Sans")
+    )
+    title_font = ImageFont.truetype(bold_path, 90)
+    subtitle_font = ImageFont.truetype(regular_path, 30)
+    draw.text(
+        (width / 2, 106), "Industry Performance Explorer",
+        font=title_font, fill="#FFFFFF", anchor="mm"
+    )
+    draw.text(
+        (width / 2, 184),
+        "Four perspectives on industry performance. Choose an analysis to explore.",
+        font=subtitle_font, fill="#CBD9E8", anchor="mm"
+    )
+    draw.rounded_rectangle(
+        (width / 2 - 65, 235, width / 2 + 65, 241),
+        radius=3, fill="#35B7AC"
+    )
+    return image
+
+
+# Standardise supplied figures without changing their underlying data.
+def prepare_preview(figure):
+    if hasattr(figure, "set_size_inches"):
+        figure.set_size_inches(11, 5.2)
+        figure.set_dpi(150)
+        figure.set_facecolor("white")
+    elif hasattr(figure, "update_layout"):
+        figure.update_layout(
+            height=340, autosize=True,
+            paper_bgcolor="white", plot_bgcolor="white",
+            margin={"l": 45, "r": 20, "t": 30, "b": 55},
+            font={"family": "Arial, sans-serif", "color": "#17283E"}
         )
+    return figure
 
-        growth_years = st.slider(
-            "Year range",
-            min_value=2000,
-            max_value=2025,
-            value=(2010, 2025),
-            key="growth_years"
-        )
 
-        investment_column, contribution_column = st.columns(2)
+def find_panel(connection):
+    filename = PROJECT_FOLDER / f"{connection['module']}.py"
+    if not filename.exists():
+        return None, "Not yet available"
+    try:
+        module = importlib.import_module(connection["module"])
+    except Exception:
+        traceback.print_exc()
+        return None, "Temporarily unavailable"
+    if not callable(getattr(module, connection["builder"], None)):
+        print(f"Missing panel function: {connection['module']}.{connection['builder']}")
+        return None, "Not yet available"
+    # A missing preview should not block a working detailed analysis.
+    return module, "Ready to explore"
 
-        with investment_column:
-            starting_investment = st.number_input(
-                "Starting investment ($)",
-                min_value=100,
-                value=1000,
-                step=100,
-                key="starting_investment"
+
+def preview_loader(preview_function):
+    def load_preview():
+        try:
+            figure = preview_function()
+            if figure is None:
+                return None, "Preview unavailable. Open the analysis to explore."
+            return prepare_preview(figure), ""
+        except Exception:
+            traceback.print_exc()
+            return None, "Preview unavailable. Open the analysis to explore."
+    return load_preview
+
+
+def navigation_action(views, destination):
+    def navigate():
+        return [gr.update(visible=(index == destination))
+                for index in range(len(views))]
+    return navigate
+
+
+def build_dashboard():
+    connected = [find_panel(connection) for connection in PANELS]
+
+    with gr.Blocks(
+        title="Industry Performance Explorer", fill_width=True
+    ) as app:
+        with gr.Column(visible=True, min_width=0) as overview:
+            # A single full-width banner gives the title its own background.
+            gr.Image(
+                value=make_title_banner(),
+                label="Industry Performance Explorer",
+                alt_text=(
+                    "Industry Performance Explorer. Four perspectives on industry "
+                    "performance. Choose an analysis to explore."
+                ),
+                show_label=False, container=False, interactive=False,
+                buttons=[], width="100%", format="png"
             )
 
-        with contribution_column:
-            monthly_contribution = st.number_input(
-                "Monthly contribution ($)",
-                min_value=0,
-                value=0,
-                step=50,
-                key="monthly_contribution"
+            explore_buttons = []
+            preview_connections = []
+            categories = ["GROWTH", "RISK", "DIVERSIFICATION", "DISTRIBUTION"]
+
+            for row_start in [0, 2]:
+                with gr.Row(equal_height=True):
+                    for index in range(row_start, row_start + 2):
+                        connection = PANELS[index]
+                        module, status = connected[index]
+
+                        with gr.Column(scale=1, min_width=0):
+                            with gr.Group():
+                                with gr.Row():
+                                    gr.Markdown(
+                                        f"**0{index + 1} / {categories[index]}**",
+                                        scale=3, min_width=0
+                                    )
+                                    gr.Markdown(
+                                        status, scale=1, min_width=0
+                                    )
+                                gr.Markdown(f"## {connection['title']}")
+                                gr.Markdown(
+                                    connection["description"], min_height=40
+                                )
+
+                                preview_fn = (
+                                    getattr(module, connection["preview"], None)
+                                    if module is not None else None
+                                )
+                                if callable(preview_fn):
+                                    preview = gr.Plot(
+                                        show_label=False, container=False
+                                    )
+                                    preview_status = gr.Markdown(min_height=25)
+                                    preview_connections.append((
+                                        preview_fn, preview, preview_status
+                                    ))
+                                else:
+                                    # A blank, labelled panel rather than fabricated data.
+                                    gr.Markdown(
+                                        "### Your analysis will appear here\n\n"
+                                        + (
+                                            "The detailed analysis is ready to open."
+                                            if module is not None else
+                                            "This panel will become available once "
+                                            "its graph file has been connected."
+                                        ),
+                                        min_height=340
+                                    )
+                                    gr.Markdown("", min_height=25)
+
+                                explore_buttons.append(gr.Button(
+                                    f"Explore {connection['title'].lower()} →",
+                                    variant="primary", size="sm",
+                                    interactive=(module is not None)
+                                ))
+
+        detail_views = []
+        back_buttons = []
+        for index, connection in enumerate(PANELS):
+            module, status = connected[index]
+            with gr.Column(visible=False, min_width=0) as detail_view:
+                detail_views.append(detail_view)
+                with gr.Row():
+                    back_buttons.append(gr.Button(
+                        "← All analyses", variant="secondary", size="sm",
+                        scale=0, min_width=140
+                    ))
+                    gr.Markdown(
+                        f"**0{index + 1} / {categories[index]}**",
+                        min_width=0
+                    )
+                if module is not None:
+                    try:
+                        getattr(module, connection["builder"])(app)
+                    except Exception:
+                        traceback.print_exc()
+                        gr.Markdown(
+                            f"## {connection['title']}\n\n"
+                            "This analysis is temporarily unavailable. "
+                            "Return to the overview and choose another analysis."
+                        )
+                        explore_buttons[index].interactive = False
+                else:
+                    gr.Markdown(f"## {connection['title']}\n\n{status}")
+
+        views = [overview] + detail_views
+        for index, button in enumerate(explore_buttons, start=1):
+            button.click(
+                fn=navigation_action(views, index), outputs=views, queue=False
             )
-
-        growth_benchmark = st.checkbox(
-            "Include a market benchmark",
-            value=True,
-            key="growth_benchmark"
-        )
-
-        st.divider()
-
-        with st.container(height=300):
-            st.info("The investment growth line chart will appear here.")
-            st.caption(
-                "The investment amount, contributions and benchmark "
-                "will feed into this panel's calculations."
+        for button in back_buttons:
+            button.click(
+                fn=navigation_action(views, 0), outputs=views, queue=False
             )
-
-# PANEL 2 — RISK VERSUS RETURN
-with top_right:
-    with st.container(border=True):
-        st.subheader("🎯 Risk versus return")
-        st.caption("Compare performance with different measures of risk.")
-
-        risk_industries = st.multiselect(
-            "Choose industries",
-            options=industries,
-            default=["Technology", "Banking"],
-            key="risk_industries"
-        )
-
-        risk_years = st.slider(
-            "Year range",
-            min_value=2000,
-            max_value=2025,
-            value=(2010, 2025),
-            key="risk_years"
-        )
-
-        risk_measure_column, frequency_column = st.columns(2)
-
-        with risk_measure_column:
-            risk_measure = st.selectbox(
-                "Risk measure",
-                options=["Annualised volatility", "Maximum drawdown"],
-                key="risk_measure"
+        for preview_function, preview, preview_status in preview_connections:
+            app.load(
+                fn=preview_loader(preview_function),
+                outputs=[preview, preview_status],
+                concurrency_id="distribution", concurrency_limit=1
             )
+    return app
 
-        with frequency_column:
-            risk_frequency = st.selectbox(
-                "Return frequency",
-                options=["Daily", "Monthly"],
-                key="risk_frequency"
-            )
 
-        return_target = st.slider(
-            "Annual return target (%)",
-            min_value=-10,
-            max_value=30,
-            value=8,
-            step=1,
-            key="return_target"
-        )
+def make_dashboard_theme():
+    return gr.themes.Base(
+        primary_hue="teal", secondary_hue="slate", neutral_hue="slate",
+        spacing_size="sm", radius_size="sm", text_size="sm",
+        font=["Arial", "sans-serif"]
+    ).set(
+        body_background_fill="#EFF2F6",
+        body_background_fill_dark="#EFF2F6",
+        background_fill_primary="#FFFFFF",
+        background_fill_primary_dark="#FFFFFF",
+        background_fill_secondary="#F5F7FA",
+        background_fill_secondary_dark="#F5F7FA",
+        block_background_fill="#FFFFFF",
+        block_background_fill_dark="#FFFFFF",
+        block_border_width="0px",
+        block_shadow="none",
+        body_text_color="#17283E",
+        body_text_color_dark="#17283E",
+        body_text_color_subdued="#526174",
+        body_text_color_subdued_dark="#526174",
+        block_title_text_color="#17283E",
+        block_title_text_color_dark="#17283E",
+        block_label_text_color="#526174",
+        block_label_text_color_dark="#526174",
+        input_background_fill="#F5F7FA",
+        input_background_fill_dark="#F5F7FA",
+        input_border_color="#E3E8EF",
+        input_border_color_dark="#E3E8EF"
+    )
 
-        st.divider()
 
-        with st.container(height=300):
-            st.info("The risk and return scatter plot will appear here.")
-            st.caption(
-                "Volatility measures fluctuations in returns. Maximum "
-                "drawdown measures the largest peak-to-trough fall "
-                "at the selected observation frequency."
-            )
-
-st.space("medium")
-
-bottom_left, bottom_right = st.columns(2, gap="large")
-
-# PANEL 3 — CORRELATIONS
-with bottom_left:
-    with st.container(border=True):
-        st.subheader("🔗 Industry correlations")
-        st.caption("Discover which industries tend to move together.")
-
-        correlation_industries = st.multiselect(
-            "Choose industries",
-            options=industries,
-            default=["Technology", "Banking", "Energy"],
-            key="correlation_industries"
-        )
-
-        correlation_years = st.slider(
-            "Year range",
-            min_value=2000,
-            max_value=2025,
-            value=(2010, 2025),
-            key="correlation_years"
-        )
-
-        correlation_frequency = st.selectbox(
-            "Return frequency",
-            options=["Daily", "Monthly"],
-            key="correlation_frequency"
-        )
-
-        minimum_correlation = st.slider(
-            "Minimum absolute correlation to display",
-            min_value=0.0,
-            max_value=1.0,
-            value=0.0,
-            step=0.05,
-            key="minimum_correlation"
-        )
-
-        show_correlation_values = st.checkbox(
-            "Show correlation values inside cells",
-            value=True,
-            key="show_correlation_values"
-        )
-
-        st.divider()
-
-        with st.container(height=300):
-            st.info("The correlation heatmap will appear here.")
-            st.caption(
-                "For example, a threshold of 0.60 will show values "
-                "at or above +0.60 and at or below −0.60."
-            )
-
-# PANEL 4 — RETURN DISTRIBUTIONS
-with bottom_right:
-    with st.container(border=True):
-        st.subheader("📊 Return distributions")
-        st.caption("Explore typical returns and extreme gains or losses.")
-
-        distribution_industries = st.multiselect(
-            "Choose industries",
-            options=industries,
-            default=["Technology", "Energy"],
-            key="distribution_industries"
-        )
-
-        distribution_years = st.slider(
-            "Year range",
-            min_value=2000,
-            max_value=2025,
-            value=(2010, 2025),
-            key="distribution_years"
-        )
-
-        chart_type_column, distribution_frequency_column = st.columns(2)
-
-        with chart_type_column:
-            distribution_chart = st.selectbox(
-                "Chart type",
-                options=["Violin plot", "Box plot", "Histogram"],
-                key="distribution_chart"
-            )
-
-        with distribution_frequency_column:
-            distribution_frequency = st.selectbox(
-                "Return frequency",
-                options=["Daily", "Monthly"],
-                key="distribution_frequency"
-            )
-
-        if distribution_chart == "Histogram":
-            histogram_bins = st.slider(
-                "Number of bins",
-                min_value=10,
-                max_value=100,
-                value=30,
-                step=5,
-                key="histogram_bins"
-            )
-
-        loss_threshold = st.slider(
-            "Highlight returns at or below (%)",
-            min_value=-30,
-            max_value=0,
-            value=-5,
-            step=1,
-            key="loss_threshold"
-        )
-
-        st.divider()
-
-        with st.container(height=300):
-            st.info("The return distribution chart will appear here.")
-            st.caption(
-                "The loss threshold will identify extreme negative "
-                "returns at the selected daily or monthly frequency."
-            )
-
-st.divider()
-st.caption(
-    "Layout preview · Industries and dates are examples · "
-    "Controls are ready to connect to data and calculations."
-)
+if __name__ == "__main__":
+    demo = build_dashboard()
+    demo.launch(inbrowser=True, theme=make_dashboard_theme())
