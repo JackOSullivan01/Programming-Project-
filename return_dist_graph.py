@@ -142,6 +142,43 @@ def draw_histogram(
     if sector_returns.empty:
         return None, "There are no observations in this period."
 
+    # Check there is enough data for the selected graph
+    observation_counts = sector_returns.count()
+
+    minimum_observations = 1
+
+    if chart_type == "Box plot":
+        minimum_observations = 2
+
+    elif chart_type in ["Violin plot", "Normal Q-Q"]:
+        minimum_observations = 3
+
+    insufficient = observation_counts[
+        observation_counts < minimum_observations
+    ].index.tolist()
+
+    if insufficient:
+        return None, (
+            f"Choose a longer period for: {', '.join(insufficient)}. "
+            f"This graph needs at least {minimum_observations} "
+            "observations per sector."
+        )
+
+    # A violin needs variation to estimate a density
+    if chart_type == "Violin plot":
+        constant_sectors = [
+            selected_sector
+            for selected_sector in sector_returns.columns
+            if sector_returns[selected_sector].dropna().nunique() < 2
+        ]
+
+        if constant_sectors:
+            return None, (
+                "Choose a period with varying returns for: "
+                + ", ".join(constant_sectors)
+                + "."
+            )
+
     if chart_type == "Normal Q-Q":
 
         #Keep sectors with enough observations for comparison
