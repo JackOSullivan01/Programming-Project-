@@ -3,6 +3,7 @@ import numpy as np
 import plotly.graph_objects as go
 from scipy import stats
 import gradio as gr
+import matplotlib.pyplot as plt
 
 
 
@@ -315,6 +316,62 @@ def update_correlation_panel(
 
     return fig, summary_md
 
+def make_correlation_preview():
+    """
+    Clean, high-contrast static heatmap preview for the 2x2 overview grid.
+    Returns a Matplotlib Figure so python.py renders it at the exact same
+    10x4 @ 150 DPI aspect ratio as the other dashboard cards.
+    """
+    preview_sectors = ALL_SECTORS[:8] if len(ALL_SECTORS) > 8 else ALL_SECTORS
+    filtered = RAW_DF.loc["2000-01-01":f"{MAX_YEAR}-12-31", preview_sectors]
+    resampled = resample_returns(filtered, "Monthly")
+    corr_matrix, _ = compute_correlation_and_pvalues(resampled, method="pearson")
+
+    # Shorten long sector names cleanly if needed so labels never clip
+    short_labels = [s[:12] + "…" if len(s) > 13 else s for s in preview_sectors]
+
+    fig, ax = plt.subplots(figsize=(10, 4), dpi=150)
+    fig.patch.set_facecolor("white")
+    ax.set_facecolor("white")
+
+    im = ax.imshow(corr_matrix.values, cmap="RdBu_r", vmin=-1.0, vmax=1.0, aspect="auto")
+
+    # Annotate correlation values inside each cell
+    n = len(preview_sectors)
+    for i in range(n):
+        for j in range(n):
+            val = corr_matrix.values[i, j]
+            text_color = "white" if abs(val) > 0.55 else "#17283E"
+            ax.text(
+                j, i, f"{val:.2f}",
+                ha="center", va="center",
+                color=text_color, fontsize=8.5, fontweight="bold"
+            )
+
+    ax.set_xticks(range(n))
+    ax.set_yticks(range(n))
+    ax.set_xticklabels(short_labels, rotation=25, ha="right", fontsize=9, color="#17283E")
+    ax.set_yticklabels(short_labels, fontsize=9, color="#17283E")
+
+    # Subtle white gridlines between cells & clean borders
+    ax.set_xticks(np.arange(-0.5, n, 1), minor=True)
+    ax.set_yticks(np.arange(-0.5, n, 1), minor=True)
+    ax.grid(which="minor", color="white", linestyle="-", linewidth=1.5)
+    ax.tick_params(which="minor", bottom=False, left=False)
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+
+    cbar = fig.colorbar(im, ax=ax, fraction=0.025, pad=0.02)
+    cbar.ax.tick_params(labelsize=8, colors="#526174")
+    cbar.outline.set_visible(False)
+
+    ax.set_title(
+        f"Monthly Return Correlations (2000–{MAX_YEAR})",
+        fontsize=10.5, fontweight="bold", color="#17283E", loc="left", pad=10
+    )
+    fig.tight_layout()
+    plt.close(fig)
+    return fig
 # ==============================================================================
 # 4. MODULAR GRADIO PANEL BUILDER (INTEGRATES INTO 4-PANEL DASHBOARD)
 # ==============================================================================

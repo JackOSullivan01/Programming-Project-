@@ -183,26 +183,7 @@ def build_dashboard():
                                 )
 
                                 # Generate the preview using his existing graph function
-                                if (
-                                    module is not None
-                                    and connection["builder"] == "build_correlation_panel"
-                                ):
-                                    def preview_fn(correlation_module=module):
-                                        figure, _ = (
-                                            correlation_module.update_correlation_panel(
-                                                correlation_module.ALL_SECTORS,
-                                                correlation_module.MIN_YEAR,
-                                                correlation_module.MAX_YEAR,
-                                                "Monthly",
-                                                "Pearson",
-                                                0.0,
-                                                True,
-                                                False,
-                                                "Full Matrix"
-                                            )
-                                        )
-
-                                        return figure
+                                
 
                                 prepared = unavailable_preview("Analysis not yet connected")
                                 if callable(preview_fn):
