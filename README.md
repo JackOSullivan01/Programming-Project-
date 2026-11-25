@@ -79,3 +79,46 @@ Select at least one industry, choose a start date no later than the end date, an
 ## Dashboard integration
 
 [`risk_vs_return.py`](./risk_vs_return.py) provides `make_risk_preview()` for the dashboard overview and `build_risk_panel(app)` for the Explore view. The underlying `risk_vs_return_panel(returns)` function builds the interactive controls, chart, target summary, and industry statistics table.
+
+
+
+# Industry Correlations Panel
+
+This panel uses historical industry returns to show how closely different industries move together over time and where portfolio diversification opportunities exist. You can change the industries, date range, return frequency, correlation method, minimum correlation threshold, statistical significance filter, value labels, and matrix layout. Each cell compares two industries, with colour and numeric values showing the direction and strength of their relationship from -1.00 (opposite movement) to +1.00 (identical movement).
+
+## Reproduce a result
+
+Use these settings to check that the heatmap and diversification summary agree:
+
+1. Select all eight industries and set the start year to 2000 and end year to 2026.
+2. Set the frequency to Monthly and the method to Pearson.
+3. Set the absolute correlation threshold `|r|` to 0.00, check **Show values**, leave **Significant only (p < 0.05)** unchecked, and set the matrix view to **Full Matrix**.
+
+With all eight industries included over the full monthly sample, the summary below the chart should report an average cross-sector correlation of **0.55**, with **Financials & Industrials (0.79)** as the highest co-moving pair and **Technology & Utilities (0.26)** as the best diversification pair. Every diagonal cell should display **1.00**, and off-diagonal cells should match the overview preview card.
+
+For a second check, raise the absolute correlation threshold `|r|` to **0.70**. Only pairs with a correlation magnitude of at least 0.70 (such as Financials & Industrials at 0.79, Financials & Real estate at 0.74, and Industrials & Real estate at 0.75) remain visible off the diagonal, while weaker relationships are hidden.
+
+## How the calculation works
+
+The panel uses daily returns directly for Daily frequency. For Weekly, Monthly, or Quarterly frequency, it compounds the daily returns within each period:
+
+`Period return = product of (1 + each daily return) − 1`
+
+It then computes pairwise correlations and two-tailed *p*-values across every pair of selected industries using the chosen method:
+
+* **Pearson** measures linear co-movement between two return series.
+* **Spearman** measures rank-order (monotonic) co-movement, making it less sensitive to extreme single-period market shocks.
+
+Any pair with fewer than 3 overlapping return observations is excluded. When **Significant only (p < 0.05)** is checked, off-diagonal pairs whose two-tailed *p*-value is 0.05 or higher are hidden from the matrix. The summary sentence below the chart averages all unique off-diagonal pairs (`i < j`) and identifies the highest-correlating and lowest-correlating pairs.
+
+## Data and input requirements
+
+The panel uses the supplied `industry_returns_clean.csv`. You can run it with that file as provided. If you need to regenerate the dataset, run `python clean_data.py` from the project folder.
+
+The CSV needs a `Date` column and one column of daily returns per industry. Returns are stored as decimals, so `0.01` represents 1%.
+
+Select at least two industries to compute a correlation matrix. If the start year is entered after the end year, the panel automatically swaps the two bounds so a valid date window is always evaluated. The Explore panel starts with all industries selected, the full available year range, Daily frequency, Pearson method, a `0.00` threshold, value labels enabled, and Full Matrix view.
+
+## Dashboard integration
+
+`correlation_graph.py` provides `make_correlation_preview()` for the dashboard overview (returning a static Matplotlib heatmap rendered at 10 × 4 inches and 150 DPI) and `build_correlation_panel()` for the Explore view. The underlying `update_correlation_panel(...)` callback updates the interactive Plotly heatmap or 3D surface and the diversification summary whenever any control changes.
