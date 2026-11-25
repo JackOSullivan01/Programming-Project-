@@ -238,6 +238,119 @@ def style_interactive_figure(fig, height=510):
     return fig
 
 
+def distribution_statistics(returns, confidence, loss_threshold):
+    # Use the exact same percentage returns as the charts, before display cropping.
+    alpha = 1 - confidence / 100
+    records = []
+    valid_threshold = loss_threshold is not None and np.isfinite(loss_threshold)
+    for name in returns.columns:
+        values = returns[name].dropna()
+        q1, median, q3 = values.quantile([0.25, 0.5, 0.75])
+        cutoff = values.quantile(alpha)
+        record = {
+            "sector": name,
+            "median": float(median),
+            "iqr": float(q3 - q1),
+            "cutoff": float(cutoff),
+            "tail_mean": float(values[values <= cutoff].mean()),
+            "observations": int(len(values))
+        }
+        if valid_threshold:
+            record["loss_rate"] = float((values <= loss_threshold).mean() * 100)
+            record["loss_count"] = int((values <= loss_threshold).sum())
+        records.append(record)
+    return records
+
+
+def sample_findings(records, frequency, confidence, loss_threshold, chart_type):
+    # Rankings use unrounded numbers and report tied sectors together.
+    table = pd.DataFrame(records).set_index("sector")
+    period = "daily" if frequency == "Daily" else "monthly"
+    count = int(table["observations"].min())
+
+    def names_at(column, value):
+        matches = np.isclose(table[column].to_numpy(), value, rtol=1e-9, atol=1e-10)
+        return ", ".join(str(name) for name in table.index[matches])
+
+    widest, narrowest = float(table["iqr"].max()), float(table["iqr"].min())
+    if len(table) == 1:
+        spread = (
+            f"**Spread:** {table.index[0]}'s middle 50% of {period} returns "
+            f"span **{widest:.2f} percentage points**."
+        )
+    elif np.isclose(widest, narrowest):
+        spread = (
+            f"**Spread:** the selected sectors have the same middle-50% range "
+            f"of **{widest:.2f} percentage points**."
+        )
+    else:
+        spread = (
+            f"**Spread:** {names_at('iqr', widest)} had the widest middle-50% "
+            f"range (**{widest:.2f} pp**); {names_at('iqr', narrowest)} had "
+            f"the narrowest (**{narrowest:.2f} pp**)."
+        )
+
+    lowest_tail = float(table["tail_mean"].min())
+    tail_names = names_at("tail_mean", lowest_tail)
+    tail = (
+        f"**Downside:** {tail_names} had "
+        f"{'a' if len(table) == 1 else 'the lowest'} historical tail mean "
+        f"of **{lowest_tail:.2f}%**. This averages returns at or below each "
+        f"sector's lower **{100-confidence:g}% cutoff**."
+    )
+
+    lines = [spread, tail]
+    if "loss_rate" in table:
+        maximum_rate = float(table["loss_rate"].max())
+        if maximum_rate == 0:
+            loss = (
+                f"**Loss frequency:** no selected sector had a {period} return "
+                f"at or below **{loss_threshold:g}%** in this sample."
+            )
+        else:
+            loss = (
+                f"**Loss frequency:** {names_at('loss_rate', maximum_rate)} "
+                f"{'recorded returns' if len(table) == 1 else 'most often recorded returns'} "
+                f"at or below **{loss_threshold:g}%** "
+                f"(**{maximum_rate:.1f}%** of observations)."
+            )
+        lines.append(loss)
+
+    if chart_type == "Normal Q-Q":
+        lines.append(
+            "**Q-Q interpretation:** these numerical summaries do not test normality. "
+            "Use departures of the plotted points from the normal reference line "
+            "to assess how the sample differs from that reference."
+        )
+    if count < 20:
+        lines.append(
+            f"This sample contains only **{count} observations per sector**; "
+            "distribution and tail comparisons are particularly sensitive to individual observations."
+        )
+    lines.append(
+        f"Based on **{count:,} {period} observations per sector**. "
+        "Uses the full selected sample, including observations outside a central histogram window. "
+        "The confidence level and loss threshold come from the Risk controls, even when overlays are hidden. "
+        "These are historical descriptions, not forecasts."
+    )
+
+    display = table.reset_index().rename(columns={
+        "sector": "Sector", "median": "Median return (%)",
+        "iqr": "Middle-50% range (pp)", "cutoff": "Tail cutoff (%)",
+        "tail_mean": "Tail mean (%)"
+    })
+    columns = ["Sector", "Median return (%)", "Middle-50% range (pp)"]
+    if "loss_rate" in table:
+        loss_label = f"Returns ≤ {loss_threshold:g}% (%)"
+        display = display.rename(columns={"loss_rate": loss_label})
+        columns.append(loss_label)
+    columns += ["Tail cutoff (%)", "Tail mean (%)"]
+    display = display[columns].copy()
+    for name in columns[1:]:
+        display[name] = display[name].round(3)
+    return "\n\n".join(lines), display
+
+
 def draw_interactive_distribution(
     returns, bins, frequency, loss_threshold, show_curve, show_normal,
     show_tail, confidence, chart_type, view_range, show_loss
@@ -253,7 +366,10 @@ def draw_interactive_distribution(
             "cutoff": cutoff,
             "tail_mean": float(values[values <= cutoff].mean())
         }
-    metadata = {"observations": len(returns), "tails": tails}
+    metadata = {
+        "observations": len(returns), "tails": tails,
+        "distribution_statistics": distribution_statistics(returns, confidence, loss_threshold)
+    }
     message = ""
 
     if chart_type in ["Histogram", "Normal Q-Q"]:
@@ -587,17 +703,36 @@ def update_controls(chart_type):
 
 # Separate validation messages from histogram-only range information
 def render_distribution(*inputs):
-    if inputs[12] and inputs[5] is None:
-        return None, "Enter a loss threshold, or turn its reference line off.", ""
+    empty_table = pd.DataFrame(columns=[
+        "Sector", "Median return (%)", "Middle-50% range (pp)",
+        "Tail cutoff (%)", "Tail mean (%)"
+    ])
+    if inputs[12] and (inputs[5] is None or not np.isfinite(inputs[5])):
+        return None, "Enter a finite loss threshold, or turn its reference line off.", "", "", "", "", "", empty_table
     fig, text = draw_histogram(*inputs)
     if fig is None:
-        return None, text, ""
-    return fig, "", text
+        # Clear old interpretations and tables when the selection is invalid.
+        return None, text, "", "", "", "", "", empty_table
+    findings, table = sample_findings(
+        fig.layout.meta["distribution_statistics"], inputs[4], inputs[9],
+        inputs[5], inputs[10]
+    )
+    # Separate the findings from the supporting notes without changing calculations.
+    paragraphs = findings.split("\n\n")
+    cards = []
+    for label in ["Spread", "Downside", "Loss frequency"]:
+        prefix = f"**{label}:** "
+        cards.append(next((part[len(prefix):] for part in paragraphs
+                           if part.startswith(prefix)), "Enter a valid loss threshold in Risk."))
+    notes = "\n\n".join(part for part in paragraphs if not part.startswith(
+        ("**Spread:**", "**Downside:**", "**Loss frequency:**")
+    ))
+    return fig, "", text, *cards, notes, table
 
 
 def selection_summary(sectors, frequency, start_date, end_date):
     # Match the main dashboard's navy header, with a slimmer profile.
-    width, height = 2200, 220
+    width, height = 2200, 154
     image = Image.new("RGB", (width, height), "#17283E")
     draw = ImageDraw.Draw(image)
     bold_path = font_manager.findfont(
@@ -607,18 +742,18 @@ def selection_summary(sectors, frequency, start_date, end_date):
         font_manager.FontProperties(family="DejaVu Sans")
     )
     draw.text(
-        (width / 2, 65), "Return distributions",
-        font=ImageFont.truetype(bold_path, 78),
+        (width / 2, 43), "Return distributions",
+        font=ImageFont.truetype(bold_path, 60),
         fill="#FFFFFF", anchor="mm"
     )
     draw.text(
-        (width / 2, 125),
+        (width / 2, 88),
         "A clearer view of sector returns, from typical outcomes to tail risk.",
-        font=ImageFont.truetype(regular_path, 27),
+        font=ImageFont.truetype(regular_path, 25),
         fill="#CBD9E8", anchor="mm"
     )
     draw.text(
-        (width / 2, 174),
+        (width / 2, 126),
         f"{len(sectors or [])} sectors  ·  {frequency} returns  ·  "
         f"{start_date} — {end_date}",
         font=ImageFont.truetype(regular_path, 24),
@@ -762,7 +897,6 @@ def build_distribution_panel(app):
                 chart_heading = gr.Markdown("### Histogram")
                 validation_message = gr.Markdown()
                 graph = gr.Plot(show_label=False, container=False)
-                gr.Markdown("Hover to inspect · Drag to zoom · Double-click to reset")
 
                 # This section exists only for histogram range information
                 with gr.Accordion(
@@ -771,34 +905,67 @@ def build_distribution_panel(app):
                 ) as range_details:
                     message = gr.Markdown()
 
-            # Reading material sits below the chart instead of squeezing it
-            with gr.Group():
-                with gr.Tabs():
-                    with gr.Tab("Interpretation"):
-                        chart_hint = gr.Markdown(chart_explanation("Histogram"))
-                        chart_notes = gr.Markdown(reading_notes("Histogram"))
-                    with gr.Tab("Reference lines"):
-                        gr.Markdown(
-                            "**Dashed red:** the selected loss threshold (default −4%).\n\n"
-                            "**Histogram dotted line / box and violin diamonds:** "
-                            "the historical lower-tail cutoff.\n\n"
-                            "**Box and violin crosses:** average return at or below "
-                            "that cutoff, called the tail mean.\n\n"
-                            "Q-Q uses a normal reference line instead of downside overlays."
-                        )
-                    with gr.Tab("Methodology"):
-                        gr.Markdown(
-                            "Monthly returns compound daily decimal returns. Only "
-                            "whole calendar months inside the selection are included. "
-                            "Months containing missing daily observations are excluded. "
-                            "Selected sectors use common complete observations."
-                        )
-                        gr.Markdown(
-                            "The central histogram window changes the view, not the "
-                            "sample used for density or tail calculations. Full range "
-                            "displays the extremes. These are historical estimates, "
-                            "not forecasts."
-                        )
+    # Findings use the current sample, rather than generic fixed claims.
+    with gr.Group():
+        gr.Markdown("### What this sample shows")
+        with gr.Row(equal_height=True):
+            with gr.Column(scale=1, min_width=240):
+                with gr.Group():
+                    gr.Markdown("#### Spread")
+                    spread_text = gr.Markdown()
+            with gr.Column(scale=1, min_width=240):
+                with gr.Group():
+                    gr.Markdown("#### Downside")
+                    downside_text = gr.Markdown()
+            with gr.Column(scale=1, min_width=240):
+                with gr.Group():
+                    gr.Markdown("#### Loss frequency")
+                    loss_text = gr.Markdown()
+        with gr.Accordion("Sample and calculation notes", open=False):
+            findings_text = gr.Markdown()
+        with gr.Accordion("Compare exact values", open=False):
+            gr.Markdown(
+                "All returns are percentages; the middle-50% range is in "
+                "percentage points (pp). Tail measures use the confidence "
+                "selected in Risk. Values are rounded to three decimal places."
+            )
+            comparison_table = gr.Dataframe(
+                value=pd.DataFrame(columns=[
+                    "Sector", "Median return (%)", "Middle-50% range (pp)",
+                    "Tail cutoff (%)", "Tail mean (%)"
+                ]),
+                interactive=False, label="Selected-period comparison",
+                show_label=False
+            )
+
+    # Reading material sits below the chart instead of squeezing it
+    with gr.Group():
+        with gr.Tabs():
+            with gr.Tab("Interpretation"):
+                chart_hint = gr.Markdown(chart_explanation("Histogram"))
+                chart_notes = gr.Markdown(reading_notes("Histogram"))
+            with gr.Tab("Reference lines"):
+                gr.Markdown(
+                    "**Dashed red:** the selected loss threshold (default −4%).\n\n"
+                    "**Histogram dotted line / box and violin diamonds:** "
+                    "the historical lower-tail cutoff.\n\n"
+                    "**Box and violin crosses:** average return at or below "
+                    "that cutoff, called the tail mean.\n\n"
+                    "Q-Q uses a normal reference line instead of downside overlays."
+                )
+            with gr.Tab("Methodology"):
+                gr.Markdown(
+                    "Monthly returns compound daily decimal returns. Only "
+                    "whole calendar months inside the selection are included. "
+                    "Months containing missing daily observations are excluded. "
+                    "Selected sectors use common complete observations."
+                )
+                gr.Markdown(
+                    "The central histogram window changes the view, not the "
+                    "sample used for density or tail calculations. Full range "
+                    "displays the extremes. These are historical estimates, "
+                    "not forecasts."
+                )
 
     settings_navigation.change(
         fn=show_settings_section, inputs=settings_navigation,
@@ -809,7 +976,8 @@ def build_distribution_panel(app):
     inputs = [sector_input, start_input, end_input, bins_input,
               frequency_input, loss_input, curve_input, normal_input,
               tail_input, confidence_input, chart_input, range_input, loss_line_input]
-    outputs = [graph, validation_message, message]
+    outputs = [graph, validation_message, message, spread_text, downside_text,
+               loss_text, findings_text, comparison_table]
     app.load(fn=render_distribution, inputs=inputs, outputs=outputs,
              concurrency_id="distribution", concurrency_limit=1)
     for control in inputs:
@@ -835,7 +1003,8 @@ def build_distribution_panel(app):
             outputs=active_selection, queue=False
         )
     return {"graph": graph, "message": message, "inputs": inputs,
-            "range_details": range_details, "error": validation_message}
+            "range_details": range_details, "error": validation_message,
+            "findings": findings_text, "comparison_table": comparison_table}
 
 
 # Share this theme with the parent dashboard if required
