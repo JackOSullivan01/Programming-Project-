@@ -345,11 +345,16 @@ def make_dashboard_theme():
         input_background_fill="#F5F7FA",
         input_background_fill_dark="#F5F7FA",
         input_border_color="#E3E8EF",
-        input_border_color_dark="#E3E8EF"
+        input_border_color_dark="#E3E8EF",
+        table_even_background_fill="#FFFFFF",
+        table_even_background_fill_dark="#FFFFFF",
+        table_odd_background_fill="#F5F7FA",
+        table_odd_background_fill_dark="#F5F7FA",
+        table_border_color="#E3E8EF",
+        table_border_color_dark="#E3E8EF",
     )
 
 
 if __name__ == "__main__":
     demo = build_dashboard()
     demo.launch(inbrowser=True, theme=make_dashboard_theme())
-
