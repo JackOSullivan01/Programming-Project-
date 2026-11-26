@@ -19,6 +19,18 @@ Results describe the selected historical sample and should not be interpreted as
 
 ![Industry Performance Explorer dashboard](images/dashboard.png)
 
+## Contents
+
+- [Installation and running](#installation-and-running)
+- [Data source and preparation](#data-source-and-preparation)
+- [Project files](#project-files)
+- [Investment Growth Panel](#investment-growth-panel)
+- [Risk vs Return Panel](#risk-vs-return-panel)
+- [Industry Correlations Panel](#industry-correlations-panel)
+- [Return Distributions Panel](#return-distributions-panel)
+- [Team contributions](#team-contributions)
+- [Overall limitations](#overall-limitations)
+
 ## Installation and running
 
 The dashboard was developed using Python 3.14.7. Package versions are listed in `requirements.txt`.
