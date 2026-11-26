@@ -295,8 +295,8 @@ def sample_findings(records, frequency, confidence, loss_threshold, chart_type):
     tail = (
         f"**Downside:** {tail_names} had "
         f"{'a' if len(table) == 1 else 'the lowest'} historical tail mean "
-        f"of **{lowest_tail:.2f}%**. This averages returns at or below each "
-        f"sector's lower **{100-confidence:g}% cutoff**."
+        f"of **{lowest_tail:.2f}%** "
+        f"among returns in its lower **{100-confidence:g}% tail**."
     )
 
     lines = [spread, tail]
@@ -697,7 +697,7 @@ def update_controls(chart_type):
         chart_explanation(chart_type),
         gr.update(visible=histogram),
         reading_notes(chart_type),
-        f"### {chart_type}"
+        make_chart_banner(chart_type)
     )
 
 
@@ -776,6 +776,21 @@ def make_controls_banner():
     return image
 
 
+def make_chart_banner(chart_type):
+    # Match the controls banner's colour and text at the wider chart aspect ratio.
+    image = Image.new("RGB", (3200, 125), "#087F83")
+    draw = ImageDraw.Draw(image)
+    font_path = font_manager.findfont(
+        font_manager.FontProperties(family="DejaVu Sans", weight="bold")
+    )
+    draw.text(
+        (1600, 62), chart_type,
+        font=ImageFont.truetype(font_path, 52),
+        fill="#FFFFFF", anchor="mm"
+    )
+    return image
+
+
 def show_settings_section(section):
     return tuple(gr.update(visible=(section == name))
                  for name in ["Data", "Risk", "Display"])
@@ -810,7 +825,7 @@ def build_distribution_panel(app):
                     value=make_controls_banner(), label="Configure analysis",
                     alt_text="Configure analysis", show_label=False,
                     container=False, interactive=False, buttons=[],
-                    width="100%", format="png"
+                    width="100%", height=56, format="png"
                 )
                 # Centre the navigation group using native layout components.
                 with gr.Row():
@@ -894,7 +909,12 @@ def build_distribution_panel(app):
         # PANEL 2: the chart gets the full remaining width
         with gr.Column(scale=5, min_width=0):
             with gr.Group():
-                chart_heading = gr.Markdown("### Histogram")
+                chart_heading = gr.Image(
+                    value=make_chart_banner("Histogram"),
+                    label="Chart type", alt_text="Selected chart type",
+                    show_label=False, container=False, interactive=False,
+                    buttons=[], width="100%", height=56, format="png"
+                )
                 validation_message = gr.Markdown()
                 graph = gr.Plot(show_label=False, container=False)
 
@@ -906,37 +926,56 @@ def build_distribution_panel(app):
                     message = gr.Markdown()
 
     # Findings use the current sample, rather than generic fixed claims.
-    with gr.Group():
-        gr.Markdown("### What this sample shows")
-        with gr.Row(equal_height=True):
-            with gr.Column(scale=1, min_width=240):
-                with gr.Group():
-                    gr.Markdown("#### Spread")
-                    spread_text = gr.Markdown()
-            with gr.Column(scale=1, min_width=240):
-                with gr.Group():
-                    gr.Markdown("#### Downside")
-                    downside_text = gr.Markdown()
-            with gr.Column(scale=1, min_width=240):
-                with gr.Group():
-                    gr.Markdown("#### Loss frequency")
-                    loss_text = gr.Markdown()
-        with gr.Accordion("Sample and calculation notes", open=False):
-            findings_text = gr.Markdown()
-        with gr.Accordion("Compare exact values", open=False):
-            gr.Markdown(
-                "All returns are percentages; the middle-50% range is in "
-                "percentage points (pp). Tail measures use the confidence "
-                "selected in Risk. Values are rounded to three decimal places."
-            )
-            comparison_table = gr.Dataframe(
-                value=pd.DataFrame(columns=[
-                    "Sector", "Median return (%)", "Middle-50% range (pp)",
-                    "Tail cutoff (%)", "Tail mean (%)"
-                ]),
-                interactive=False, label="Selected-period comparison",
-                show_label=False
-            )
+    gr.Image(
+        value=make_chart_banner("Key findings"),
+        label="Key findings", alt_text="Key findings",
+        show_label=False, container=False, interactive=False,
+        buttons=[], width="100%", height=38, format="png"
+    )
+
+    # Native panel padding and spacer columns separate the three findings.
+    with gr.Row(equal_height=True):
+        with gr.Column(scale=1, min_width=240, variant="panel"):
+            gr.Markdown("#### Return spread")
+            spread_text = gr.Markdown()
+
+        with gr.Column(scale=0, min_width=24):
+            gr.Markdown("")
+
+        with gr.Column(scale=1, min_width=240, variant="panel"):
+            gr.Markdown("#### Downside severity")
+            downside_text = gr.Markdown()
+
+        with gr.Column(scale=0, min_width=24):
+            gr.Markdown("")
+
+        with gr.Column(scale=1, min_width=240, variant="panel"):
+            gr.Markdown("#### Loss frequency")
+            loss_text = gr.Markdown()
+
+    # Longer definitions stay separate from the headline findings.
+    with gr.Accordion("Sample and calculation notes", open=False):
+        findings_text = gr.Markdown()
+        gr.Markdown(
+            "**Tail mean** is the average return among observations at or "
+            "below each sector's lower-tail cutoff. The confidence setting "
+            "in Risk determines the tail: 95% confidence uses the lower 5%."
+        )
+
+    with gr.Accordion("Compare exact values", open=False):
+        gr.Markdown(
+            "All returns are percentages; the middle-50% range is in "
+            "percentage points (pp). Tail measures use the confidence "
+            "selected in Risk. Values are rounded to three decimal places."
+        )
+        comparison_table = gr.Dataframe(
+            value=pd.DataFrame(columns=[
+                "Sector", "Median return (%)", "Middle-50% range (pp)",
+                "Tail cutoff (%)", "Tail mean (%)"
+            ]),
+            interactive=False, label="Selected-period comparison",
+            show_label=False
+        )
 
     # Reading material sits below the chart instead of squeezing it
     with gr.Group():
