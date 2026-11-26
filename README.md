@@ -19,6 +19,52 @@ Results describe the selected historical sample and should not be interpreted as
 
 ![Industry Performance Explorer dashboard](images/dashboard.png)
 
+## Installation and running
+
+The dashboard was developed using Python 3.14.7. Package versions are listed in `requirements.txt`.
+
+### 1. Download the project
+
+Clone this repository or download and extract its ZIP file. Open a terminal in the project folder containing `python.py`, `requirements.txt` and `industry_returns_clean.csv`.
+
+Keep the supplied panel files and resources in their original locations.
+
+### 2. Create a virtual environment
+
+On Windows:
+
+```powershell
+py -m venv .venv
+```
+
+### 3. Install the dependencies
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+### 4. Start the dashboard
+
+```powershell
+.\.venv\Scripts\python.exe python.py
+```
+
+Open the local URL printed in the terminal if the browser does not open automatically. Keep the terminal running while using the dashboard. Press Ctrl+C to stop it.
+
+### macOS and Linux
+
+Use these commands from the project folder:
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python python.py
+```
+
+Use Python 3.14.7 to match the development environment. Other Python versions have not been verified.
+
+The supplied cleaned CSV allows the dashboard to run without regenerating the dataset.
+
 ## Investment Growth Panel
 
 This panel uses historical industry returns to show how the same investment would have grown in different industries. You can change the industries, date range, starting investment, monthly contribution, and investment goal.
