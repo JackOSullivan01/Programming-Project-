@@ -65,6 +65,58 @@ Use Python 3.14.7 to match the development environment. Other Python versions ha
 
 The supplied cleaned CSV allows the dashboard to run without regenerating the dataset.
 
+## Data source and preparation
+
+The dashboard uses daily industry portfolio returns from the [Kenneth French Data Library](https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/data_library.html), supplied in `49_Industry_Portfolios_Daily.csv`.
+
+The cleaned dataset, `industry_returns_clean.csv`, contains 6,726 daily observations from **3 January 2000 to 30 September 2026**, with eight custom sector groups.
+
+### Sector definitions
+
+| Sector group | Source industry columns |
+|---|---|
+| Technology | Softw, Hardw, Chips |
+| Financials | Banks, Insur, Fin |
+| Healthcare | Hlth, MedEq, Drugs |
+| Energy | Oil, Coal |
+| Consumer goods | Food, Soda, Beer, Smoke, Hshld, Clths |
+| Industrials | Mach, ElcEq, Steel, FabPr, Aero, Ships |
+| Utilities | Util |
+| Real estate | RlEst |
+
+These are project-defined groups rather than an official sector classification.
+
+### Cleaning process
+
+`clean_data.py`:
+
+1. Extracts the **Average Value Weighted Returns** section of the original file.
+2. Cleans column headings, parses dates and retains the required industries.
+3. Converts return columns to numeric values and replaces missing-value codes `-99.99` and `-999` with `NaN`.
+4. Retains available observations from 2000 through 2026, sorts dates and checks for duplicates.
+5. Divides percentage returns by 100, so `0.01` represents a 1% return.
+6. Calculates each custom sector’s daily return as the arithmetic mean of its constituent industry returns.
+7. Saves the result as `industry_returns_clean.csv`.
+
+The source industry portfolios are **value-weighted within each industry**. However, the constituent industry returns receive **equal weights when combined into our custom sector groups**. The resulting groups should therefore not be interpreted as fully market-cap-weighted sector portfolios.
+
+If any constituent industry return is missing on a date, the corresponding sector return remains missing. Missing returns are not replaced with zero. Each panel’s treatment of missing observations and aggregated periods is described in its own section.
+
+### Regenerating the dataset
+
+The supplied cleaned CSV can be used directly. To regenerate it, place the original file beside `clean_data.py` and run this command from the project folder:
+
+```powershell
+.\.venv\Scripts\python.exe clean_data.py
+```
+
+The script creates:
+
+- `value_weighted_returns.csv` — the extracted source table.
+- `industry_returns_clean.csv` — the eight-sector dataset used by the dashboard.
+
+Using a newer source file may change the available observations and results. The reproducible examples in this README refer to the supplied cleaned dataset.
+
 ## Investment Growth Panel
 
 This panel uses historical industry returns to show how the same investment would have grown in different industries. You can change the industries, date range, starting investment, monthly contribution, and investment goal.
