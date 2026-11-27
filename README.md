@@ -378,7 +378,7 @@ Results describe historical observations, not forecasts or maximum possible loss
 
 ## Use of ai tools
 As required for the module, here is how each of us used AI tools while building our parts of the dashboard:
-Conall Criostoir: Used Gemini to brainstorm early Matplotlib and Seaborn plot layouts, build the interactive 3D surface view, and troubleshoot terminal and formatting errors.
-George O'Toole: Used ChatGPT to map out the inflation panel, track down bugs, line up dates and series across panels, plus checked the project against the grading rubric.
-Jack O'Sullivan: Used ChatGPT to help clean and filter the dataset, and for dashboard integration.
-Matthew Kearney: Used ChatGPT to sketch out chart ideas, draft docstrings, and clean up styling. Also made sure risk vs return panel lined up with th other panels.
+**Conall Criostoir**: Used Gemini to brainstorm early Matplotlib and Seaborn plot layouts, build the interactive 3D surface view, and troubleshoot terminal and formatting errors.
+**George O'Toole**: Used ChatGPT to map out the inflation panel, track down bugs, line up dates and series across panels, plus checked the project against the grading rubric.
+**Jack O'Sullivan**: Used ChatGPT to help clean and filter the dataset, and for dashboard integration.
+**Matthew Kearney**: Used ChatGPT to sketch out chart ideas, draft docstrings, and clean up styling. Also made sure risk vs return panel lined up with th other panels.
