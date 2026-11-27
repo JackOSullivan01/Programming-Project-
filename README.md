@@ -374,3 +374,6 @@ Results describe historical observations, not forecasts or maximum possible loss
 - Results depend on the selected dates, return frequency and each panel’s missing-data rules.
 - Historical correlations may change and do not guarantee diversification benefits.
 - Investment growth excludes fees, taxes and inflation.
+
+
+## Use of ai tools
