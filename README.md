@@ -146,7 +146,7 @@ Using a newer source file may change the available observations and results. The
 | `README.md` | Project description, setup instructions and panel documentation. |
 | `.gitignore` | Excludes generated files and the local virtual environment from Git. |
 | `images/dashboard.png` | Dashboard screenshot displayed in this README. |
-| (`investment_growth.py` — check before submission) | Potentially wrong confirm with before removing. |
+| `investment_growth.py` | Earlier iteration of the Investment Growth panel. The shared dashboard uses the final version in `investment_growth_graph.py`. |
 
 
 The dashboard runs using the supplied cleaned dataset. The original source file and cleaning script are needed only to regenerate it.
