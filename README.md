@@ -129,6 +129,12 @@ The script creates:
 
 Using a newer source file may change the available observations and results. The reproducible examples in this README refer to the supplied cleaned dataset.
 
+The links below explain how we cleaned the data and calculated the results shown in each dashboard panel
+- [Data Cleaning](./data_cleaning_processing.md)
+- [Risk vs Return](./risk_return_processing.md)
+- [Industry Correlations](./correlation_processing.md)
+- [Return Distributions](./return_distributions_processing.md)
+
 ## Project files
 
 | File | Purpose |
