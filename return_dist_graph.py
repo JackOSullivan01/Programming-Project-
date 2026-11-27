@@ -1,12 +1,16 @@
 from pathlib import Path
+import base64
 from scipy import stats
-from matplotlib.ticker import PercentFormatter
 
 import gradio as gr
 import pandas as pd
 import numpy as np
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import seaborn as sns
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 from PIL import Image, ImageDraw, ImageFont
 from matplotlib import font_manager
 
@@ -188,392 +192,435 @@ def draw_histogram(
                 + "."
             )
 
-    if chart_type == "Normal Q-Q":
-
-        #Keep sectors with enough observations for comparison
-        available_sectors = []
-
-        for selected_sector in sector:
-            if sector_returns[selected_sector].count() >= 3:
-                available_sectors.append(selected_sector)
-
-        if not available_sectors:
-            return None, "Choose a period with at least three observations."
-
-        #Create a separate panel for each selected sector
-        number_of_sectors = len(available_sectors)
-        columns = 1 if number_of_sectors == 1 else 2
-        rows = (number_of_sectors + columns - 1) // columns
-
-        fig, axes = plt.subplots(
-            rows,
-            columns,
-            figsize=(11.5, 2.2 * rows + 0.6),
-            dpi=180,
-            sharex=True,
-            sharey=True,
-            squeeze=False,
-            layout="constrained"
-        )
-
-        for i, selected_sector in enumerate(available_sectors):
-            ax = axes.flat[i]
-            values = sector_returns[selected_sector].dropna()
-
-            #Calculate theoretical normal quantiles and observed quantiles
-            quantiles, fitted_line = stats.probplot(
-                values,
-                dist="norm"
-            )
-
-            theoretical, observed = quantiles
-            slope, intercept, correlation = fitted_line
-
-            #Plot the observed returns against theoretical quantiles
-            ax.scatter(
-                theoretical,
-                observed,
-                color=PALETTE[selected_sector],
-                s=12,
-                alpha=0.65,
-                linewidths=0
-            )
-
-            #Draw the fitted normal reference line
-            ax.plot(
-                theoretical,
-                slope * theoretical + intercept,
-                color="#17283E",
-                linestyle="--",
-                linewidth=1.5,
-                label="Normal reference"
-            )
-
-            ax.set_title(selected_sector)
-            ax.set_xlabel("Theoretical normal quantile")
-            ax.set_ylabel(f"{frequency} return (%)")
-            ax.legend(frameon=False, fontsize=8)
-
-        #Hide unused panels
-        for i in range(number_of_sectors, rows * columns):
-            axes.flat[i].set_visible(False)
-
-        style_figure(fig)
-        plt.close(fig)
-
-        return fig, ""
- 
-    #Draw the cumulative probability of returns for each sector
-    if chart_type == "Cumulative probability":
-
-        fig, ax = plt.subplots(
-            figsize=(11.5, 4),
-            dpi=180,
-            layout="constrained"
-        )
-
-        for selected_sector in sector:
-            #Arrange returns from smallest to largest
-            values = np.sort(
-                sector_returns[selected_sector].dropna().to_numpy()
-            )
-
-            #Skip sectors with no available returns
-            if len(values) == 0:
-                continue
-
-            #Calculate the cumulative proportion of observations
-            probabilities = np.arange(1, len(values) + 1) / len(values)
-
-            #Draw a step curve because these are observed probabilities
-            ax.step(
-                values,
-                probabilities,
-                where="post",
-                linewidth=1.8,
-                color=PALETTE[selected_sector],
-                label=selected_sector
-            )
-
-        #Mark the user's chosen loss threshold
-        if show_loss:
-            ax.axvline(
-                loss_threshold,
-                color="#B84A42",
-                linestyle="--",
-                linewidth=1.5,
-                label=f"Loss threshold: {loss_threshold}%"
-            )
-
-        #Show the selected lower-tail probability
-        if show_tail:
-            tail_probability = 1 - confidence / 100
-
-            ax.axhline(
-                tail_probability,
-                color="#637084",
-                linestyle=":",
-                linewidth=1.3,
-                label=f"Lower {100 - confidence:g}% probability"
-            )
-
-        #Display probabilities as percentages from 0% to 100%
-        ax.set_ylim(0, 1)
-        ax.yaxis.set_major_formatter(PercentFormatter(1))
-
-        ax.set_xlabel(f"{frequency} return (%)")
-        ax.set_ylabel("Proportion of observations at or below return")
-        ax.legend(frameon=False, fontsize=8)
-
-        style_figure(fig)
-        plt.close(fig)
-
-        return fig, ""
-
-    #Draw box or violin plots when selected
-    if chart_type in ["Box plot", "Violin plot"]:
-
-        #Arrange the sector returns into a table for Seaborn
-        records = []
-
-        for selected_sector in sector:
-            for value in sector_returns[selected_sector].dropna():
-                records.append({
-                    "Sector": selected_sector,
-                    "Return (%)": value
-                })
-
-        plot_data = pd.DataFrame(records)
-
-        #Give each sector a separate row for clear comparisons
-        fig, ax = plt.subplots(
-            figsize=(11.5, max(3.4, len(sector) * 0.43 + 0.8)),
-            dpi=180,
-            layout="constrained"
-        )
-
-        
-
-        if chart_type == "Box plot":
-            #Show the median, quartiles, whiskers and outliers
-            sns.boxplot(
-                data=plot_data,
-                x="Return (%)",
-                y="Sector",
-                order=sector,
-                hue="Sector",
-                palette=PALETTE,
-                dodge=False,
-                legend=False,
-                width=0.5,
-                linewidth=1,
-                fliersize=2.5,
-                ax=ax
-            )
-
-        else:
-            #Show the distribution shape with quartile lines inside
-            sns.violinplot(
-                data=plot_data,
-                x="Return (%)",
-                y="Sector",
-                order=sector,
-                hue="Sector",
-                palette=PALETTE,
-                dodge=False,
-                legend=False,
-                inner="quart",
-                cut=0,
-                linewidth=1,
-                ax=ax
-            )
-
-        #Show a reference line for zero return
-        ax.axvline(
-            0,
-            color="#637084",
-            linewidth=0.8,
-            alpha=0.6
-        )
-
-        #Mark the user's chosen loss threshold
-        if show_loss:
-            ax.axvline(
-                loss_threshold,
-                color="#B84A42",
-                linestyle="--",
-                linewidth=1.5,
-                label=f"Loss threshold: {loss_threshold}%"
-            )
-
-        #Show the lower percentile and tail mean for each sector
-        if show_tail:
-            tail_probability = 1 - confidence / 100
-
-            for i, selected_sector in enumerate(sector):
-                values = sector_returns[selected_sector].dropna()
-
-                tail_cutoff = values.quantile(tail_probability)
-                tail_mean = values[values <= tail_cutoff].mean()
-
-                #Label each marker type only once in the legend
-                cutoff_label = (
-                    f"Lower {100 - confidence:g}% cutoff"
-                    if i == 0 else "_nolegend_"
-                )
-
-                mean_label = (
-                    "Tail mean"
-                    if i == 0 else "_nolegend_"
-                )
-
-                ax.scatter(
-                    tail_cutoff,
-                    i,
-                    marker="D",
-                    color="#B84A42",
-                    s=35,
-                    zorder=5,
-                    label=cutoff_label
-                )
-
-                ax.scatter(
-                    tail_mean,
-                    i,
-                    marker="x",
-                    color="#17283E",
-                    s=40,
-                    zorder=5,
-                    label=mean_label
-                )
-
-        #Label and display the selected graph
-        ax.set_xlabel(f"{frequency} return (%)")
-        ax.set_ylabel("")
-        ax.legend(frameon=False, fontsize=8, loc="best")
-
-        style_figure(fig)
-        plt.close(fig)
-
-        return fig, ""
-
-    all_values = sector_returns.to_numpy().flatten()
-    central = view_range == "Central 98%"
-    low, high = np.quantile(all_values, [0.01, 0.99])
-    if not central or low == high:
-        low, high = all_values.min(), all_values.max()
-    if low == high:
-        low, high = low - 0.5, high + 0.5
-
-    # Expand the central window when needed to include the chosen loss line.
-    if central and show_loss:
-        padding = max((high - low) * 0.025, 0.05)
-        low = min(low, loss_threshold - padding)
-        high = max(high, loss_threshold + padding)
-
-    # Fine common bins within the displayed range, retaining extreme values
-    # in outer bins so density remains normalised over the full sample.
-    edges = np.linspace(low, high, int(bins) + 1)
-    if all_values.min() < low:
-        edges = np.r_[all_values.min(), edges]
-    if all_values.max() > high:
-        edges = np.r_[edges, all_values.max()]
-
-    number_of_sectors = len(sector)
-    columns = 1 if number_of_sectors == 1 else 2
-    rows = (number_of_sectors + columns - 1) // columns
-
-    # A wide, compact figure keeps four panels readable together
-    fig, axes = plt.subplots(
-        rows, columns, figsize=(11.5, 2.2 * rows + 0.6), dpi=180,
-        sharex=True, sharey=True, squeeze=False, layout="constrained"
+    # Plotly changes rendering only: the selected returns above stay unchanged.
+    return draw_interactive_distribution(
+        sector_returns, bins, frequency, loss_threshold, show_curve,
+        show_normal, show_tail, confidence, chart_type, view_range, show_loss
     )
-    outside_messages = []
-    for i, selected_sector in enumerate(sector):
-        ax = axes.flat[i]
-        values = sector_returns[selected_sector].dropna()
-        ax.hist(
-            values, bins=edges, density=True,
-            color=PALETTE[selected_sector], edgecolor="white", linewidth=0.45
+
+
+def plain_plotly_values(value):
+    if isinstance(value, dict):
+        if "bdata" in value and "dtype" in value:
+            array = np.frombuffer(
+                base64.b64decode(value["bdata"]), dtype=np.dtype(value["dtype"])
+            )
+            shape = value.get("shape")
+            if shape:
+                dimensions = tuple(int(item.strip()) for item in shape.split(","))
+                array = array.reshape(dimensions)
+            return array.tolist()
+        return {key: plain_plotly_values(item) for key, item in value.items()}
+    if isinstance(value, (tuple, list)):
+        return [plain_plotly_values(item) for item in value]
+    if isinstance(value, np.ndarray):
+        return plain_plotly_values(value.tolist())
+    if isinstance(value, np.generic):
+        return value.item()
+    return value
+
+
+def style_interactive_figure(fig, height=510):
+    fig.update_layout(
+        template="plotly_white", height=height, autosize=True,
+        paper_bgcolor="#FFFFFF", plot_bgcolor="#FFFFFF",
+        font=dict(family="Arial, sans-serif", size=12, color="#17283E"),
+        margin=dict(l=65, r=28, t=40, b=85),
+        hovermode="closest", dragmode="zoom",
+        hoverlabel=dict(bgcolor="white", font_color="#17283E"),
+        legend=dict(orientation="h", x=0, y=-0.18, font_size=11),
+        uirevision=None
+    )
+    fig.update_xaxes(showgrid=False, zeroline=False, linecolor="#D4DCE5",
+                     automargin=True, fixedrange=False)
+    fig.update_yaxes(gridcolor="#E4E9EF", zeroline=False,
+                     automargin=True, fixedrange=False)
+    return fig
+
+
+def distribution_statistics(returns, confidence, loss_threshold):
+    # Use the exact same percentage returns as the charts, before display cropping.
+    alpha = 1 - confidence / 100
+    records = []
+    valid_threshold = loss_threshold is not None and np.isfinite(loss_threshold)
+    for name in returns.columns:
+        values = returns[name].dropna()
+        q1, median, q3 = values.quantile([0.25, 0.5, 0.75])
+        cutoff = values.quantile(alpha)
+        record = {
+            "sector": name,
+            "median": float(median),
+            "iqr": float(q3 - q1),
+            "cutoff": float(cutoff),
+            "tail_mean": float(values[values <= cutoff].mean()),
+            "observations": int(len(values))
+        }
+        if valid_threshold:
+            record["loss_rate"] = float((values <= loss_threshold).mean() * 100)
+            record["loss_count"] = int((values <= loss_threshold).sum())
+        records.append(record)
+    return records
+
+
+def sample_findings(records, frequency, confidence, loss_threshold, chart_type):
+    # Rankings use unrounded numbers and report tied sectors together.
+    table = pd.DataFrame(records).set_index("sector")
+    period = "daily" if frequency == "Daily" else "monthly"
+    count = int(table["observations"].min())
+
+    def names_at(column, value):
+        matches = np.isclose(table[column].to_numpy(), value, rtol=1e-9, atol=1e-10)
+        return ", ".join(str(name) for name in table.index[matches])
+
+    widest, narrowest = float(table["iqr"].max()), float(table["iqr"].min())
+    if len(table) == 1:
+        spread = (
+            f"**Spread:** {table.index[0]}'s middle 50% of {period} returns "
+            f"span **{widest:.2f} percentage points**."
+        )
+    elif np.isclose(widest, narrowest):
+        spread = (
+            f"**Spread:** the selected sectors have the same middle-50% range "
+            f"of **{widest:.2f} percentage points**."
+        )
+    else:
+        spread = (
+            f"**Spread:** {names_at('iqr', widest)} had the widest middle-50% "
+            f"range (**{widest:.2f} pp**); {names_at('iqr', narrowest)} had "
+            f"the narrowest (**{narrowest:.2f} pp**)."
         )
 
-        # Estimate density from the full sample, even in the central view
-        if show_curve and len(values) >= 3 and values.nunique() > 1:
-            x_values = np.linspace(low, high, 500)
-            ax.plot(
-                x_values, stats.gaussian_kde(values)(x_values),
-                color="#17345C", linewidth=1.7, label="Density curve"
-            )
-        if show_normal and len(values) >= 3 and values.std() > 0:
-            x_values = np.linspace(low, high, 500)
-            ax.plot(
-                x_values,
-                stats.norm.pdf(x_values, loc=values.mean(), scale=values.std()),
-                color="#637084", linestyle="--", linewidth=1.4,
-                label="Normal reference"
-            )
+    lowest_tail = float(table["tail_mean"].min())
+    tail_names = names_at("tail_mean", lowest_tail)
+    tail = (
+        f"**Downside:** {tail_names} had "
+        f"{'a' if len(table) == 1 else 'the lowest'} historical tail mean "
+        f"of **{lowest_tail:.2f}%** "
+        f"among returns in its lower **{100-confidence:g}% tail**."
+    )
 
-        # Tail calculations always use every selected observation
-        if show_tail:
-            tail_cutoff = values.quantile(1 - confidence / 100)
-            tail_mean = values[values <= tail_cutoff].mean()
-            if tail_cutoff > low:
-                ax.axvspan(low, min(high, tail_cutoff), color="#B84A42", alpha=0.10)
-            ax.axvline(
-                tail_cutoff, color="#B84A42", linestyle=":", linewidth=1.5,
-                label=f"Lower {100 - confidence:g}% cutoff"
+    lines = [spread, tail]
+    if "loss_rate" in table:
+        maximum_rate = float(table["loss_rate"].max())
+        if maximum_rate == 0:
+            loss = (
+                f"**Loss frequency:** no selected sector had a {period} return "
+                f"at or below **{loss_threshold:g}%** in this sample."
             )
-            ax.text(
-                0.98, 0.96,
-                f"Cutoff {tail_cutoff:.2f}%\nTail mean {tail_mean:.2f}%",
-                transform=ax.transAxes, ha="right", va="top", fontsize=7,
-                color="#B84A42",
-                bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.85}
+        else:
+            loss = (
+                f"**Loss frequency:** {names_at('loss_rate', maximum_rate)} "
+                f"{'recorded returns' if len(table) == 1 else 'most often recorded returns'} "
+                f"at or below **{loss_threshold:g}%** "
+                f"(**{maximum_rate:.1f}%** of observations)."
             )
-        if show_loss:
-            ax.axvline(
-                loss_threshold, color="#DC2626", linestyle="--", linewidth=1.2,
-                label=f"Loss threshold {loss_threshold:g}%"
-            )
+        lines.append(loss)
 
-        ax.set_xlim(low, high)
-        ax.set_title(selected_sector, loc="left", fontsize=10)
-        ax.tick_params(labelbottom=True)
-        if i // columns == rows - 1:
-            ax.set_xlabel(f"{frequency} return (%)", fontsize=8)
-        if i % columns == 0:
-            ax.set_ylabel("Density", fontsize=8)
-
-        if central:
-            outside = int(((values < low) | (values > high)).sum())
-            outside_messages.append(
-                f"{selected_sector}: {outside:,} ({outside / len(values):.1%})"
-            )
-
-    for i in range(number_of_sectors, rows * columns):
-        axes.flat[i].set_visible(False)
-
-    # One shared legend replaces the repeated panel legends
-    handles, labels = axes.flat[0].get_legend_handles_labels()
-    if handles:
-        fig.legend(
-            handles, labels, loc="outside lower center",
-            ncol=min(4, len(handles)), frameon=False, fontsize=8
+    if chart_type == "Normal Q-Q":
+        lines.append(
+            "**Q-Q interpretation:** these numerical summaries do not test normality. "
+            "Use departures of the plotted points from the normal reference line "
+            "to assess how the sample differs from that reference."
         )
-    style_figure(fig)
-    plt.close(fig)
+    if count < 20:
+        lines.append(
+            f"This sample contains only **{count} observations per sector**; "
+            "distribution and tail comparisons are particularly sensitive to individual observations."
+        )
+    lines.append(
+        f"Based on **{count:,} {period} observations per sector**. "
+        "Uses the full selected sample, including observations outside a central histogram window. "
+        "The confidence level and loss threshold come from the Risk controls, even when overlays are hidden. "
+        "These are historical descriptions, not forecasts."
+    )
 
+    display = table.reset_index().rename(columns={
+        "sector": "Sector", "median": "Median return (%)",
+        "iqr": "Middle-50% range (pp)", "cutoff": "Tail cutoff (%)",
+        "tail_mean": "Tail mean (%)"
+    })
+    columns = ["Sector", "Median return (%)", "Middle-50% range (pp)"]
+    if "loss_rate" in table:
+        loss_label = f"Returns ≤ {loss_threshold:g}% (%)"
+        display = display.rename(columns={"loss_rate": loss_label})
+        columns.append(loss_label)
+    columns += ["Tail cutoff (%)", "Tail mean (%)"]
+    display = display[columns].copy()
+    for name in columns[1:]:
+        display[name] = display[name].round(3)
+    return "\n\n".join(lines), display
+
+
+def draw_interactive_distribution(
+    returns, bins, frequency, loss_threshold, show_curve, show_normal,
+    show_tail, confidence, chart_type, view_range, show_loss
+):
+    # Returns are already percentages, prepared by the existing callback.
+    sectors = list(returns.columns)
+    alpha = 1 - confidence / 100
+    tails = {}
+    for name in sectors:
+        values = returns[name].dropna()
+        cutoff = float(values.quantile(alpha))
+        tails[name] = {
+            "cutoff": cutoff,
+            "tail_mean": float(values[values <= cutoff].mean())
+        }
+    metadata = {
+        "observations": len(returns), "tails": tails,
+        "distribution_statistics": distribution_statistics(returns, confidence, loss_threshold)
+    }
     message = ""
-    if central:
-        message = (
-            f"**Central 98% view:** shared limits {low:.2f}% to {high:.2f}% "
-            "start from the pooled first and 99th percentiles and expand if needed "
-            "to include the selected loss line. Observations outside "
-            "the view: " + "; ".join(outside_messages) +
-            ". No observations are removed from density or tail calculations. "
-            "Choose Full range to see the extremes."
+
+    if chart_type in ["Histogram", "Normal Q-Q"]:
+        columns = 1 if len(sectors) == 1 else 2
+        rows = (len(sectors) + columns - 1) // columns
+        fig = make_subplots(
+            rows=rows, cols=columns, subplot_titles=sectors,
+            shared_xaxes="all", shared_yaxes="all",
+            vertical_spacing=0.15 if rows > 1 else 0
         )
+        height = max(450, rows * 250 + 100)
+
+        if chart_type == "Histogram":
+            all_values = returns.to_numpy().ravel()
+            central = view_range == "Central 98%"
+            low, high = np.quantile(all_values, [0.01, 0.99])
+            if not central or low == high:
+                low, high = all_values.min(), all_values.max()
+            if low == high:
+                low, high = low - 0.5, high + 0.5
+            if central and show_loss:
+                padding = max((high - low) * 0.025, 0.05)
+                low = min(low, loss_threshold - padding)
+                high = max(high, loss_threshold + padding)
+
+            # Outer bins retain extreme observations in the normalisation.
+            edges = np.linspace(low, high, int(bins) + 1)
+            if all_values.min() < low:
+                edges = np.r_[all_values.min(), edges]
+            if all_values.max() > high:
+                edges = np.r_[edges, all_values.max()]
+            metadata["histogram_edges"] = edges.tolist()
+            outside_messages = []
+            maximum_density = 0.0
+
+        for i, name in enumerate(sectors):
+            row, col = i // columns + 1, i % columns + 1
+            values = returns[name].dropna().to_numpy()
+            colour = PALETTE.get(name, "#245A91")
+
+            if chart_type == "Normal Q-Q":
+                quantiles, fitted = stats.probplot(values, dist="norm")
+                theoretical, observed = quantiles
+                slope, intercept, correlation = fitted
+                fig.add_trace(go.Scatter(
+                    x=theoretical, y=observed, mode="markers", name=name,
+                    showlegend=False, marker=dict(color=colour, size=5, opacity=0.7),
+                    hovertemplate=("Normal quantile: %{x:.3f}<br>"
+                                   "Observed return: %{y:.3f}%<extra>" + name + "</extra>")
+                ), row=row, col=col)
+                fig.add_trace(go.Scatter(
+                    x=theoretical, y=slope * theoretical + intercept,
+                    mode="lines", name="Normal reference", showlegend=(i == 0),
+                    legendgroup="normal", line=dict(color="#637084", dash="dash"),
+                    hovertemplate="Fitted normal return: %{y:.3f}%<extra></extra>"
+                ), row=row, col=col)
+                xlabel = "Theoretical normal quantile"
+                ylabel = f"{frequency} return (%)"
+
+            else:
+                counts, _ = np.histogram(values, bins=edges)
+                widths = np.diff(edges)
+                density = counts / (len(values) * widths)
+                maximum_density = max(maximum_density, float(density.max()))
+                centres = (edges[:-1] + edges[1:]) / 2
+                custom = np.column_stack([
+                    edges[:-1], edges[1:], counts, counts / len(values)
+                ])
+                fig.add_trace(go.Bar(
+                    x=centres, y=density, width=widths, name=name,
+                    showlegend=False, marker=dict(color=colour,
+                    line=dict(color="white", width=0.6)), opacity=0.9,
+                    customdata=custom,
+                    hovertemplate=("Bin: %{customdata[0]:.2f}% to %{customdata[1]:.2f}%"
+                                   "<br>Observations: %{customdata[2]:.0f}"
+                                   "<br>Sample share: %{customdata[3]:.2%}"
+                                   "<br>Density: %{y:.4f}<extra>" + name + "</extra>")
+                ), row=row, col=col)
+                x = np.linspace(low, high, 500)
+                if show_curve and len(values) >= 3 and np.unique(values).size > 1:
+                    curve_density = stats.gaussian_kde(values)(x)
+                    maximum_density = max(maximum_density, float(curve_density.max()))
+                    fig.add_trace(go.Scatter(
+                        x=x, y=curve_density, mode="lines",
+                        name="Density curve", legendgroup="density", showlegend=(i == 0),
+                        line=dict(color="#17345C", width=2),
+                        hovertemplate="Return: %{x:.2f}%<br>Density: %{y:.4f}<extra>Density curve</extra>"
+                    ), row=row, col=col)
+                if show_normal and len(values) >= 3 and values.std(ddof=1) > 0:
+                    normal_density = stats.norm.pdf(x, loc=values.mean(), scale=values.std(ddof=1))
+                    maximum_density = max(maximum_density, float(normal_density.max()))
+                    fig.add_trace(go.Scatter(
+                        x=x, y=normal_density,
+                        mode="lines", name="Normal reference", legendgroup="normal",
+                        showlegend=(i == 0), line=dict(color="#637084", dash="dash"),
+                        hovertemplate="Return: %{x:.2f}%<br>Density: %{y:.4f}<extra>Normal reference</extra>"
+                    ), row=row, col=col)
+                if show_tail:
+                    cutoff, tail_mean = tails[name]["cutoff"], tails[name]["tail_mean"]
+                    if cutoff > low:
+                        fig.add_vrect(x0=low, x1=min(high, cutoff),
+                                      fillcolor="#B84A42", opacity=0.1, line_width=0,
+                                      row=row, col=col)
+                    fig.add_vline(x=cutoff, line_color="#B84A42", line_dash="dot",
+                                  line_width=1.5, row=row, col=col)
+                    axis = "" if i == 0 else str(i + 1)
+                    fig.add_annotation(
+                        x=0.98, y=0.97, xref=f"x{axis} domain", yref=f"y{axis} domain",
+                        text=f"Cutoff {cutoff:.2f}%<br>Tail mean {tail_mean:.2f}%",
+                        showarrow=False, xanchor="right", yanchor="top",
+                        font=dict(size=10, color="#B84A42"), bgcolor="rgba(255,255,255,0.85)"
+                    )
+                if show_loss:
+                    fig.add_vline(x=loss_threshold, line_color="#DC2626", line_dash="dash",
+                                  line_width=1.2, row=row, col=col)
+                fig.update_xaxes(range=[low, high], row=row, col=col)
+                xlabel, ylabel = f"{frequency} return (%)", "Density"
+                if central:
+                    outside = int(((values < low) | (values > high)).sum())
+                    outside_messages.append(f"{name}: {outside:,} ({outside / len(values):.1%})")
+            if row == rows:
+                fig.update_xaxes(title_text=xlabel, row=row, col=col)
+            if col == 1:
+                fig.update_yaxes(title_text=ylabel, row=row, col=col)
+
+        if chart_type == "Histogram":
+            # Shared legend entries for reference lines drawn as shapes.
+            if show_tail:
+                fig.add_trace(go.Scatter(x=[None], y=[None], mode="lines",
+                    name=f"Lower {100 - confidence:g}% cutoff",
+                    line=dict(color="#B84A42", dash="dot")), row=1, col=1)
+            if show_loss:
+                fig.add_trace(go.Scatter(x=[None], y=[None], mode="lines",
+                    name=f"Loss threshold {loss_threshold:g}%",
+                    line=dict(color="#DC2626", dash="dash")), row=1, col=1)
+            fig.update_layout(bargap=0)
+            fig.update_yaxes(
+                range=[0, max(maximum_density * 1.15, 0.001)],
+                autorange=False, tickformat=".3f", nticks=5
+            )
+            if central:
+                message = (
+                    f"**Central 98% view:** shared limits {low:.2f}% to {high:.2f}% "
+                    "start from the pooled first and 99th percentiles and expand if needed "
+                    "to include the selected loss line. Observations outside the view: "
+                    + "; ".join(outside_messages)
+                    + ". No observations are removed from density or tail calculations. "
+                    "Choose Full range to see the extremes."
+                )
+
+    elif chart_type == "Cumulative probability":
+        fig = go.Figure()
+        height = 500
+        for name in sectors:
+            values, counts = np.unique(returns[name].dropna().to_numpy(), return_counts=True)
+            probabilities = np.cumsum(counts) / counts.sum()
+            fig.add_trace(go.Scatter(
+                x=values, y=probabilities, mode="lines", name=name,
+                line=dict(color=PALETTE.get(name, "#245A91"), width=2, shape="hv"),
+                hovertemplate="Return: %{x:.3f}%<br>At or below: %{y:.2%}<extra>" + name + "</extra>"
+            ))
+        if show_loss:
+            fig.add_vline(x=loss_threshold, line_color="#DC2626", line_dash="dash")
+        if show_tail:
+            fig.add_hline(y=alpha, line_color="#637084", line_dash="dot")
+        fig.update_xaxes(title_text=f"{frequency} return (%)")
+        fig.update_yaxes(title_text="Proportion at or below return", tickformat=".0%", range=[0, 1])
+
+    else:
+        fig = go.Figure()
+        height = max(450, len(sectors) * 44 + 120)
+        for name in sectors:
+            values = returns[name].dropna().to_numpy()
+            colour = PALETTE.get(name, "#245A91")
+            options = dict(x=values.tolist(), y=[name] * len(values),
+                           name=name, orientation="h", showlegend=False,
+                           line=dict(color=colour, width=1), fillcolor=colour, opacity=0.85)
+            if chart_type == "Box plot":
+                # Suppress Plotly's multi-label box hover and provide one summary.
+                fig.add_trace(go.Box(
+                    **options, quartilemethod="linear", boxpoints=False,
+                    hoverinfo="skip", hoveron="points", width=0.5
+                ))
+                q1, median, q3 = np.quantile(values, [0.25, 0.5, 0.75])
+                iqr = q3 - q1
+                lower = float(values[values >= q1 - 1.5 * iqr].min())
+                upper = float(values[values <= q3 + 1.5 * iqr].max())
+                summary = (
+                    f"<b>{name}</b><br>Observations: {len(values):,}"
+                    f"<br>Lower whisker: {lower:.2f}%"
+                    f"<br>Lower quartile: {q1:.2f}%"
+                    f"<br>Median: {median:.2f}%"
+                    f"<br>Upper quartile: {q3:.2f}%"
+                    f"<br>Upper whisker: {upper:.2f}%<extra></extra>"
+                )
+                # Closely spaced invisible targets cover the box body for hover.
+                fig.add_trace(go.Scatter(
+                    x=np.linspace(q1, q3, 15).tolist(), y=[name] * 15,
+                    mode="markers", showlegend=False,
+                    marker=dict(size=22, color="rgba(0,0,0,0)"),
+                    hovertemplate=summary, name=name
+                ))
+                outliers = values[(values < lower) | (values > upper)]
+                if len(outliers):
+                    fig.add_trace(go.Scatter(
+                        x=outliers.tolist(), y=[name] * len(outliers),
+                        mode="markers", showlegend=False, name=name,
+                        marker=dict(size=4, color=colour, opacity=0.75),
+                        hovertemplate="<b>" + name + "</b><br>Outlier: %{x:.2f}%<extra></extra>"
+                    ))
+            else:
+                # Plotly draws the violin density; quartiles are supplied separately
+                # below so their numerical values match the existing calculations.
+                fig.add_trace(go.Violin(**options, points=False, spanmode="hard",
+                                       box_visible=False, meanline_visible=False))
+                q1, median, q3 = np.quantile(values, [0.25, 0.5, 0.75])
+                fig.add_trace(go.Scatter(
+                    x=[q1, median, q3], y=[name, name, name], mode="markers",
+                    showlegend=False, marker=dict(color="#17283E", symbol="line-ns", size=13,
+                                                  line=dict(color="#17283E", width=1.3)),
+                    customdata=["Lower quartile", "Median", "Upper quartile"],
+                    hovertemplate="%{customdata}: %{x:.3f}%<extra>" + name + "</extra>"
+                ))
+            if show_tail:
+                for key, symbol, label, colour in [
+                    ("cutoff", "diamond", f"Lower {100-confidence:g}% cutoff", "#B84A42"),
+                    ("tail_mean", "x", "Tail mean", "#17283E")
+                ]:
+                    fig.add_trace(go.Scatter(
+                        x=[tails[name][key]], y=[name], mode="markers", name=label,
+                        legendgroup=key, showlegend=(name == sectors[0]),
+                        marker=dict(color=colour, symbol=symbol, size=9),
+                        hovertemplate=label + ": %{x:.3f}%<extra>" + name + "</extra>"
+                    ))
+        fig.add_vline(x=0, line_color="#94A3B8", line_width=0.8)
+        if show_loss:
+            fig.add_vline(x=loss_threshold, line_color="#DC2626", line_dash="dash")
+            fig.add_trace(go.Scatter(x=[None], y=[None], mode="lines",
+                name=f"Loss threshold {loss_threshold:g}%",
+                line=dict(color="#DC2626", dash="dash")))
+        fig.update_xaxes(title_text=f"{frequency} return (%)")
+        fig.update_yaxes(type="category", categoryorder="array", categoryarray=sectors,
+                         autorange="reversed", tickangle=0)
+
+    style_interactive_figure(fig, height)
+    fig.update_layout(meta=metadata)
+    # Use ordinary lists for compatibility with Gradio's bundled Plotly renderer.
+    # New Plotly versions otherwise encode NumPy arrays as binary typed arrays.
+    fig = go.Figure(plain_plotly_values(fig.to_plotly_json()))
     return fig, message
+
 
 # Explain the selected analysis without changing the graph calculations
 def chart_explanation(chart_type):
@@ -650,23 +697,42 @@ def update_controls(chart_type):
         chart_explanation(chart_type),
         gr.update(visible=histogram),
         reading_notes(chart_type),
-        f"### {chart_type}"
+        make_chart_banner(chart_type)
     )
 
 
 # Separate validation messages from histogram-only range information
 def render_distribution(*inputs):
-    if inputs[12] and inputs[5] is None:
-        return None, "Enter a loss threshold, or turn its reference line off.", ""
+    empty_table = pd.DataFrame(columns=[
+        "Sector", "Median return (%)", "Middle-50% range (pp)",
+        "Tail cutoff (%)", "Tail mean (%)"
+    ])
+    if inputs[12] and (inputs[5] is None or not np.isfinite(inputs[5])):
+        return None, "Enter a finite loss threshold, or turn its reference line off.", "", "", "", "", "", empty_table
     fig, text = draw_histogram(*inputs)
     if fig is None:
-        return None, text, ""
-    return fig, "", text
+        # Clear old interpretations and tables when the selection is invalid.
+        return None, text, "", "", "", "", "", empty_table
+    findings, table = sample_findings(
+        fig.layout.meta["distribution_statistics"], inputs[4], inputs[9],
+        inputs[5], inputs[10]
+    )
+    # Separate the findings from the supporting notes without changing calculations.
+    paragraphs = findings.split("\n\n")
+    cards = []
+    for label in ["Spread", "Downside", "Loss frequency"]:
+        prefix = f"**{label}:** "
+        cards.append(next((part[len(prefix):] for part in paragraphs
+                           if part.startswith(prefix)), "Enter a valid loss threshold in Risk."))
+    notes = "\n\n".join(part for part in paragraphs if not part.startswith(
+        ("**Spread:**", "**Downside:**", "**Loss frequency:**")
+    ))
+    return fig, "", text, *cards, notes, table
 
 
 def selection_summary(sectors, frequency, start_date, end_date):
     # Match the main dashboard's navy header, with a slimmer profile.
-    width, height = 2200, 220
+    width, height = 2200, 154
     image = Image.new("RGB", (width, height), "#17283E")
     draw = ImageDraw.Draw(image)
     bold_path = font_manager.findfont(
@@ -676,18 +742,18 @@ def selection_summary(sectors, frequency, start_date, end_date):
         font_manager.FontProperties(family="DejaVu Sans")
     )
     draw.text(
-        (width / 2, 65), "Return distributions",
-        font=ImageFont.truetype(bold_path, 78),
+        (width / 2, 43), "Return distributions",
+        font=ImageFont.truetype(bold_path, 60),
         fill="#FFFFFF", anchor="mm"
     )
     draw.text(
-        (width / 2, 125),
+        (width / 2, 88),
         "A clearer view of sector returns, from typical outcomes to tail risk.",
-        font=ImageFont.truetype(regular_path, 27),
+        font=ImageFont.truetype(regular_path, 25),
         fill="#CBD9E8", anchor="mm"
     )
     draw.text(
-        (width / 2, 174),
+        (width / 2, 126),
         f"{len(sectors or [])} sectors  ·  {frequency} returns  ·  "
         f"{start_date} — {end_date}",
         font=ImageFont.truetype(regular_path, 24),
@@ -704,6 +770,21 @@ def make_controls_banner():
     )
     draw.text(
         (450, 62), "Configure analysis",
+        font=ImageFont.truetype(font_path, 52),
+        fill="#FFFFFF", anchor="mm"
+    )
+    return image
+
+
+def make_chart_banner(chart_type):
+    # Match the controls banner's colour and text at the wider chart aspect ratio.
+    image = Image.new("RGB", (3200, 125), "#087F83")
+    draw = ImageDraw.Draw(image)
+    font_path = font_manager.findfont(
+        font_manager.FontProperties(family="DejaVu Sans", weight="bold")
+    )
+    draw.text(
+        (1600, 62), chart_type,
         font=ImageFont.truetype(font_path, 52),
         fill="#FFFFFF", anchor="mm"
     )
@@ -744,7 +825,7 @@ def build_distribution_panel(app):
                     value=make_controls_banner(), label="Configure analysis",
                     alt_text="Configure analysis", show_label=False,
                     container=False, interactive=False, buttons=[],
-                    width="100%", format="png"
+                    width="100%", height=56, format="png"
                 )
                 # Centre the navigation group using native layout components.
                 with gr.Row():
@@ -828,7 +909,12 @@ def build_distribution_panel(app):
         # PANEL 2: the chart gets the full remaining width
         with gr.Column(scale=5, min_width=0):
             with gr.Group():
-                chart_heading = gr.Markdown("### Histogram")
+                chart_heading = gr.Image(
+                    value=make_chart_banner("Histogram"),
+                    label="Chart type", alt_text="Selected chart type",
+                    show_label=False, container=False, interactive=False,
+                    buttons=[], width="100%", height=56, format="png"
+                )
                 validation_message = gr.Markdown()
                 graph = gr.Plot(show_label=False, container=False)
 
@@ -839,34 +925,86 @@ def build_distribution_panel(app):
                 ) as range_details:
                     message = gr.Markdown()
 
-            # Reading material sits below the chart instead of squeezing it
-            with gr.Group():
-                with gr.Tabs():
-                    with gr.Tab("Interpretation"):
-                        chart_hint = gr.Markdown(chart_explanation("Histogram"))
-                        chart_notes = gr.Markdown(reading_notes("Histogram"))
-                    with gr.Tab("Reference lines"):
-                        gr.Markdown(
-                            "**Dashed red:** the selected loss threshold (default −4%).\n\n"
-                            "**Histogram dotted line / box and violin diamonds:** "
-                            "the historical lower-tail cutoff.\n\n"
-                            "**Box and violin crosses:** average return at or below "
-                            "that cutoff, called the tail mean.\n\n"
-                            "Q-Q uses a normal reference line instead of downside overlays."
-                        )
-                    with gr.Tab("Methodology"):
-                        gr.Markdown(
-                            "Monthly returns compound daily decimal returns. Only "
-                            "whole calendar months inside the selection are included. "
-                            "Months containing missing daily observations are excluded. "
-                            "Selected sectors use common complete observations."
-                        )
-                        gr.Markdown(
-                            "The central histogram window changes the view, not the "
-                            "sample used for density or tail calculations. Full range "
-                            "displays the extremes. These are historical estimates, "
-                            "not forecasts."
-                        )
+    # Findings use the current sample, rather than generic fixed claims.
+    gr.Image(
+        value=make_chart_banner("Key findings"),
+        label="Key findings", alt_text="Key findings",
+        show_label=False, container=False, interactive=False,
+        buttons=[], width="100%", height=38, format="png"
+    )
+
+    # Native panel padding and spacer columns separate the three findings.
+    with gr.Row(equal_height=True):
+        with gr.Column(scale=1, min_width=240, variant="panel"):
+            gr.Markdown("#### Return spread")
+            spread_text = gr.Markdown()
+
+        with gr.Column(scale=0, min_width=24):
+            gr.Markdown("")
+
+        with gr.Column(scale=1, min_width=240, variant="panel"):
+            gr.Markdown("#### Downside severity")
+            downside_text = gr.Markdown()
+
+        with gr.Column(scale=0, min_width=24):
+            gr.Markdown("")
+
+        with gr.Column(scale=1, min_width=240, variant="panel"):
+            gr.Markdown("#### Loss frequency")
+            loss_text = gr.Markdown()
+
+    # Longer definitions stay separate from the headline findings.
+    with gr.Accordion("Sample and calculation notes", open=False):
+        findings_text = gr.Markdown()
+        gr.Markdown(
+            "**Tail mean** is the average return among observations at or "
+            "below each sector's lower-tail cutoff. The confidence setting "
+            "in Risk determines the tail: 95% confidence uses the lower 5%."
+        )
+
+    with gr.Accordion("Compare exact values", open=False):
+        gr.Markdown(
+            "All returns are percentages; the middle-50% range is in "
+            "percentage points (pp). Tail measures use the confidence "
+            "selected in Risk. Values are rounded to three decimal places."
+        )
+        comparison_table = gr.Dataframe(
+            value=pd.DataFrame(columns=[
+                "Sector", "Median return (%)", "Middle-50% range (pp)",
+                "Tail cutoff (%)", "Tail mean (%)"
+            ]),
+            interactive=False, label="Selected-period comparison",
+            show_label=False
+        )
+
+    # Reading material sits below the chart instead of squeezing it
+    with gr.Group():
+        with gr.Tabs():
+            with gr.Tab("Interpretation"):
+                chart_hint = gr.Markdown(chart_explanation("Histogram"))
+                chart_notes = gr.Markdown(reading_notes("Histogram"))
+            with gr.Tab("Reference lines"):
+                gr.Markdown(
+                    "**Dashed red:** the selected loss threshold (default −4%).\n\n"
+                    "**Histogram dotted line / box and violin diamonds:** "
+                    "the historical lower-tail cutoff.\n\n"
+                    "**Box and violin crosses:** average return at or below "
+                    "that cutoff, called the tail mean.\n\n"
+                    "Q-Q uses a normal reference line instead of downside overlays."
+                )
+            with gr.Tab("Methodology"):
+                gr.Markdown(
+                    "Monthly returns compound daily decimal returns. Only "
+                    "whole calendar months inside the selection are included. "
+                    "Months containing missing daily observations are excluded. "
+                    "Selected sectors use common complete observations."
+                )
+                gr.Markdown(
+                    "The central histogram window changes the view, not the "
+                    "sample used for density or tail calculations. Full range "
+                    "displays the extremes. These are historical estimates, "
+                    "not forecasts."
+                )
 
     settings_navigation.change(
         fn=show_settings_section, inputs=settings_navigation,
@@ -877,7 +1015,8 @@ def build_distribution_panel(app):
     inputs = [sector_input, start_input, end_input, bins_input,
               frequency_input, loss_input, curve_input, normal_input,
               tail_input, confidence_input, chart_input, range_input, loss_line_input]
-    outputs = [graph, validation_message, message]
+    outputs = [graph, validation_message, message, spread_text, downside_text,
+               loss_text, findings_text, comparison_table]
     app.load(fn=render_distribution, inputs=inputs, outputs=outputs,
              concurrency_id="distribution", concurrency_limit=1)
     for control in inputs:
@@ -903,7 +1042,8 @@ def build_distribution_panel(app):
             outputs=active_selection, queue=False
         )
     return {"graph": graph, "message": message, "inputs": inputs,
-            "range_details": range_details, "error": validation_message}
+            "range_details": range_details, "error": validation_message,
+            "findings": findings_text, "comparison_table": comparison_table}
 
 
 # Share this theme with the parent dashboard if required

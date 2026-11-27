@@ -1,10 +1,12 @@
 from pathlib import Path
 from io import BytesIO
+import base64
 import importlib
 import traceback
 
 import pandas as pd
 import gradio as gr
+import plotly.graph_objects as go
 from PIL import Image, ImageDraw, ImageFont
 from matplotlib import font_manager
 
@@ -89,6 +91,28 @@ def unavailable_preview(text):
     return image
 
 
+def white_preview_frame(image):
+    # Fill the entire preview frame with white, including aspect-ratio margins.
+    # The image remains proportional; the chart itself is never stretched.
+    buffer = BytesIO()
+    image.convert("RGB").save(buffer, format="PNG")
+    source = "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode("ascii")
+    figure = go.Figure(go.Image(source=source, hoverinfo="skip"))
+    figure.update_layout(
+        height=PREVIEW_HEIGHT, autosize=True,
+        margin=dict(l=0, r=0, t=0, b=0),
+        paper_bgcolor="#FFFFFF", plot_bgcolor="#FFFFFF",
+        template="plotly_white", showlegend=False,
+        dragmode=False, hovermode=False,
+        modebar_remove=["zoom2d", "pan2d", "select2d", "lasso2d",
+                        "zoomIn2d", "zoomOut2d", "autoScale2d", "resetScale2d"]
+    )
+    figure.update_xaxes(visible=False, fixedrange=True, constrain="domain")
+    figure.update_yaxes(visible=False, fixedrange=True, scaleanchor="x",
+                         scaleratio=1, constrain="domain", autorange="reversed")
+    return figure
+
+
 def prepare_preview(figure):
     if hasattr(figure, "set_size_inches"):
         figure.set_size_inches(10, 4)
@@ -100,7 +124,7 @@ def prepare_preview(figure):
         figure.savefig(buffer, format="png", dpi=150, facecolor="white")
         buffer.seek(0)
         with Image.open(buffer) as image:
-            return image.convert("RGB").copy()
+            return white_preview_frame(image.convert("RGB").copy())
     if hasattr(figure, "update_layout"):
         figure.update_layout(
             height=PREVIEW_HEIGHT, autosize=True,
@@ -110,7 +134,7 @@ def prepare_preview(figure):
         )
         return figure
     if isinstance(figure, Image.Image):
-        return figure
+        return white_preview_frame(figure)
     raise TypeError("Preview functions must return a Matplotlib or Plotly figure, or a PIL image.")
 
 
@@ -197,16 +221,9 @@ def build_dashboard():
                                         traceback.print_exc()
                                         prepared = unavailable_preview("Preview unavailable")
                                 if isinstance(prepared, Image.Image):
-                                    gr.Image(
-                                        value=prepared, label=f"{connection['title']} preview",
-                                        alt_text=f"Overview preview of {connection['title'].lower()}",
-                                        show_label=False, container=False, interactive=False,
-                                        buttons=[], height=PREVIEW_HEIGHT,
-                                        width="100%", format="png"
-                                    )
-                                else:
-                                    # Plotly respects its fixed layout height.
-                                    gr.Plot(value=prepared, show_label=False, container=False)
+                                    prepared = white_preview_frame(prepared)
+                                # Plotly's white paper fills the complete fixed-height frame.
+                                gr.Plot(value=prepared, show_label=False, container=False)
                                 # A compact right-aligned action, rather than a colour strip.
                                 with gr.Row():
                                     gr.Markdown("", scale=1, min_width=0)
@@ -328,12 +345,16 @@ def make_dashboard_theme():
         input_background_fill="#F5F7FA",
         input_background_fill_dark="#F5F7FA",
         input_border_color="#E3E8EF",
-        input_border_color_dark="#E3E8EF"
+        input_border_color_dark="#E3E8EF",
+        table_even_background_fill="#FFFFFF",
+        table_even_background_fill_dark="#FFFFFF",
+        table_odd_background_fill="#F5F7FA",
+        table_odd_background_fill_dark="#F5F7FA",
+        table_border_color="#E3E8EF",
+        table_border_color_dark="#E3E8EF",
     )
 
 
 if __name__ == "__main__":
     demo = build_dashboard()
     demo.launch(inbrowser=True, theme=make_dashboard_theme())
-    
-
