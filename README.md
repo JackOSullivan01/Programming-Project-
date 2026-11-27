@@ -347,7 +347,7 @@ Results describe historical observations, not forecasts or maximum possible loss
 |---|---|---|
 | Jack O’Sullivan | Return distributions panel | Data preparation, dashboard design and integration |
 | George O'Toole | Investment growth panel | [Additional contributions] |
-| Matthew Kearney | Risk versus return panel | [Additional contributions] |
+| Matthew Kearney | Risk versus return panel | Dashboard integration, processing documentation, visual/aesthetic fixes |
 | Conall Criostóir | Industry correlations panel | Read me documentation, end to end dashboard testing |
 
 ## Overall limitations
