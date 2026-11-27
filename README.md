@@ -206,19 +206,6 @@ The summary should show **3 of 8 industries meet both targets**. Consumer goods,
 
 For a second check, raise the maximum volatility to **21%**. Financials should now qualify, bringing the count to **4 of 8**. Its volatility is about 20.68%, so the new threshold includes it while the figures in the table stay the same.
 
-### How the calculation works
-
-The panel uses daily returns directly for Daily frequency. For Weekly, Monthly, or Annual frequency, it compounds the daily returns within each period:
-
-~~~text
-Period return = product of (1 + each daily return) − 1
-~~~
-
-It then calculates the arithmetic mean of the period returns and one of two risk measures:
-
-- **Volatility** is the sample standard deviation of the period returns.
-- **Downside deviation** is the square root of the average squared negative return, counting zero and positive returns as zero in that average.
-
 The chart and table display the results as percentages. The targets use the selected frequency, so a 1% return target in Monthly mode means an average monthly return of 1%. The maximum volatility target applies in Volatility mode.
 
 ### Data and input requirements
