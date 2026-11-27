@@ -131,6 +131,7 @@ Using a newer source file may change the available observations and results. The
 
 The links below explain how we cleaned the data and calculated the results shown in each dashboard panel
 - [Data Cleaning](./data_cleaning_processing.md)
+- [Investment Growth](./investment_growth_processing.md)
 - [Risk vs Return](./risk_return_processing.md)
 - [Industry Correlations](./correlation_processing.md)
 - [Return Distributions](./return_distributions_processing.md)
