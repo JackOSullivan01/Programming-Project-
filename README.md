@@ -147,7 +147,7 @@ Using a newer source file may change the available observations and results. The
 | `.gitignore` | Excludes generated files and the local virtual environment from Git. |
 | `images/dashboard.png` | Dashboard screenshot displayed in this README. |
 | (`investment_growth.py` — check before submission) | Potentially wrong confirm with before removing. |
-| (`correlation_heatmap.py` — check before submission) | Potentially wrong confirm before removing. |
+
 
 The dashboard runs using the supplied cleaned dataset. The original source file and cleaning script are needed only to regenerate it.
 
